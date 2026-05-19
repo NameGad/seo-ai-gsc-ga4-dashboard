@@ -1,0 +1,108 @@
+# GSC JS Dashboard
+
+本地项目：使用 Node.js + Express 从 Google Search Console 获取 Search Analytics 数据，并使用 Vue 3 + Vite + Chart.js 构建前端工作台。
+
+快速开始：
+
+1. 将你的 `credentials.json`（OAuth 客户端）放在项目根目录（与 `server.js` 同级）。
+2. 运行：
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+3. 打开浏览器访问： http://localhost:3000
+4. 点击 `Google Auth` 完成授权（第一次访问会要求授权）。授权成功后会在项目根目录生成 `token.json`。
+5. 点击 `Load Sites` 拉取当前 Google 账号可访问的所有 Search Console property，也可以手动输入 `Site URL`（例如 `https://www.example.com/` 或 `sc-domain:example.com`）。
+6. 选择日期范围（默认结束日期为今天前 2 天，起始日期为结束日前 28 天），点击 `Load Data` 加载并查看报告。
+
+多站点说明：
+
+- `token.json` 绑定的是当前授权的 Google 账号，不是某一个网站。
+- 同一个 Google 账号在 Search Console 里有权限的多个站点，都可以通过同一个 token 读取。
+- 如果要访问不同 Google 账号下的站点，需要重新授权并生成对应账号的 token；生产化版本建议按账号分别保存 token，而不是共用一个 `token.json`。
+
+数据工作台说明：
+
+- `GSC`：当前可用的 Search Console 数据工作台。
+- `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
+- `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。
+- `History` 还会基于 SQLite 展示 GSC 历史趋势，比较不同快照之间的 clicks、impressions、CTR 和 position 变化。
+- `AI`：预留 AI 分析入口，后续可以读取本地历史快照，做趋势解释、异常检测、CTR 优化建议和 GSC + GA 联动分析。
+
+本地数据存储策略：
+
+- 原始层：每次成功加载 GSC 后，会保存完整 JSON 快照到 `data/snapshots/`。
+- 结构化层：同一份快照会同步写入 `data/seo-data.sqlite`，用于快速查询、历史趋势和后续 AI 分析。
+- 迁移层：SQLite 使用 `schema_migrations` 记录数据库版本，后续新增 GA4/AI 表时会按 migration 升级。
+- 备份层：可以通过 `POST /api/history/backup` 生成 `data/backups/seo-data-*.sqlite`。
+- 当前 SQLite 表包括：
+  - `snapshots`：每次抓取的元数据、站点、日期范围和指标摘要。
+  - `sites`：站点/property 元数据。
+  - `data_sources`：GSC、GA4 等数据源状态。
+  - `sync_jobs`：同步任务记录。
+  - `gsc_trend`：按日期的 clicks/impressions/ctr/position。
+  - `gsc_pages`：按页面维度的数据。
+  - `gsc_queries`：按关键词维度的数据。
+  - `gsc_page_queries`：页面 + 关键词组合数据。
+- 服务启动时会自动把 `data/snapshots/` 里已有的 JSON 快照同步进 SQLite。
+
+测试与验证：
+
+1. 安装依赖：
+
+```bash
+npm install
+```
+
+2. 构建 Vue 前端并启动服务器：
+
+```bash
+npm run build
+npm start
+# 服务器默认监听 http://localhost:3000
+```
+
+开发模式：
+
+```bash
+npm run dev
+```
+
+开发模式会同时启动 Express API 服务和 Vite 前端服务。生产/日常使用建议执行 `npm run build && npm start`，由 Express 直接服务 `frontend/dist`。
+
+3. 在浏览器打开 `http://localhost:3000`，确认仪表盘页面能正常加载。
+4. 点击 `Google Auth` 按钮，会跳转 Google 授权页面（或直接访问 `http://localhost:3000/auth` 以触发授权）。
+5. 授权后 `token.json` 会写入项目根目录；随后返回仪表盘并点击 `Load Data` 拉取数据。
+6. 可用的后端测试端点：
+
+- `GET /api/gsc/trend?siteUrl=https://www.example.com` — 按日期维度返回 clicks/impressions/ctr/position（未授权时返回 `401`，请先授权）。
+- `GET /api/gsc/sites` — 返回当前 token 可访问的 GSC property 列表。
+- `GET /api/gsc/pages?siteUrl=...` — 按页面返回数据。
+- `GET /api/gsc/queries?siteUrl=...` — 按查询返回数据。
+- `GET /api/gsc/page-query?siteUrl=...` — 按 page+query 返回数据。
+- `POST /api/history/snapshots` — 将一次数据拉取结果保存为本地 JSON 快照。
+- `GET /api/history/snapshots` — 返回本地历史快照列表。
+- `GET /api/history/gsc-trends` — 返回按快照聚合的 GSC 历史趋势和相邻快照变化。
+- `GET /api/history/stats` — 返回本地 SQLite 数据库统计。
+- `GET /api/history/migrations` — 返回本地 SQLite schema migration 状态。
+- `POST /api/history/backup` — 创建一份本地 SQLite 数据库备份。
+- `GET /api/history/snapshots/:id` — 返回指定快照完整数据。
+
+前端结构：
+
+- `frontend/src/App.vue` — 主工作台状态与数据流。
+- `frontend/src/components/` — 顶部栏、控制栏、指标卡、图表、表格等 Vue 组件。
+- `frontend/src/api/gsc.js` — GSC/ OAuth API 请求封装。
+- `frontend/src/styles.css` — 全局 UI 设计系统与响应式布局。
+
+安全提示：
+- 请勿将 `credentials.json`、`token.json` 或 `data/` 提交到公开仓库；`.gitignore` 已忽略这些文件。
+
+
+安全说明：
+- 请勿将 `credentials.json` 或 `token.json` 上传到公共仓库。
+- 本地不会将凭据暴露到 `public/`。
+- 本地历史快照保存在 `data/snapshots/`，其中可能包含站点和查询数据，也不要公开上传。

@@ -1,0 +1,25 @@
+{
+  "name": "seo-ai-gsc-ga4-dashboard",
+  "version": "1.1.0",
+  "description": "AI-ready local SEO analytics dashboard for Google Search Console, GA4, historical trends, and SQLite data storage",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
+    "frontend": "vite --config frontend/vite.config.js",
+    "dev": "DASHBOARD_URL=http://127.0.0.1:5173/ concurrently \"npm:server\" \"npm:frontend\"",
+    "build": "vite build --config frontend/vite.config.js",
+    "preview": "npm run build && npm start"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.16.0",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "chart.js": "^4.5.1",
+    "concurrently": "^9.2.1",
+    "express": "^4.18.2",
+    "googleapis": "^132.0.0",
+    "vite": "^8.0.13",
+    "vue": "^3.5.34"
+  }
+}
