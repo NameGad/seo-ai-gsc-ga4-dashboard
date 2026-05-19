@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - 2026-05-19
+
+- Added a GSC Deep Analysis / Insights workspace.
+- Added page decay monitoring, keyword ranking volatility, low CTR opportunity scoring, cannibalization detection, query intent classification, and new/lost keyword detection.
+- Added GSC country, device, search appearance, and search type breakdown capture for future snapshots.
+- Added SQLite `gsc_dimensions` storage and deep-analysis API.
+
 ## 1.1.0 - 2026-05-19
 
 - Renamed project to `seo-ai-gsc-ga4-dashboard` for clearer SEO/GSC/GA4 positioning.

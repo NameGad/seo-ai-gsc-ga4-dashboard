@@ -1,6 +1,6 @@
 {
   "name": "seo-ai-gsc-ga4-dashboard",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "AI-ready local SEO analytics dashboard for Google Search Console, GA4, historical trends, and SQLite data storage",
   "main": "server.js",
   "type": "commonjs",

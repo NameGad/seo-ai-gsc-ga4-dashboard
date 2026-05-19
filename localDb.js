@@ -118,6 +118,29 @@ const MIGRATIONS = [
       insertSource.run('gsc', 'Google Search Console', 'active', now, now);
       insertSource.run('ga4', 'Google Analytics 4', 'planned', now, now);
     }
+  },
+  {
+    version: 3,
+    name: 'gsc_dimension_breakdown_tables',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS gsc_dimensions (
+          snapshot_id TEXT NOT NULL,
+          dimension_type TEXT NOT NULL,
+          dimension_value TEXT NOT NULL,
+          search_type TEXT NOT NULL DEFAULT 'web',
+          clicks INTEGER NOT NULL DEFAULT 0,
+          impressions INTEGER NOT NULL DEFAULT 0,
+          ctr REAL NOT NULL DEFAULT 0,
+          position REAL NOT NULL DEFAULT 0,
+          PRIMARY KEY (snapshot_id, dimension_type, dimension_value, search_type),
+          FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gsc_dimensions_snapshot_type_impressions
+          ON gsc_dimensions(snapshot_id, dimension_type, impressions DESC);
+      `);
+    }
   }
 ];
 
@@ -176,6 +199,7 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
     database.prepare('DELETE FROM gsc_pages WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_queries WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_page_queries WHERE snapshot_id = ?').run(snapshot.id);
+    database.prepare('DELETE FROM gsc_dimensions WHERE snapshot_id = ?').run(snapshot.id);
 
     insertRows(database, 'gsc_trend', ['snapshot_id', 'date', 'clicks', 'impressions', 'ctr', 'position'],
       (datasets.trend || []).map(row => [snapshot.id, row.date, toInt(row.clicks), toInt(row.impressions), toNum(row.ctr), toNum(row.position)]));
@@ -188,6 +212,13 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
 
     insertRows(database, 'gsc_page_queries', ['snapshot_id', 'page', 'query_text', 'clicks', 'impressions', 'ctr', 'position'],
       (datasets.pageQuery || []).map(row => [snapshot.id, row.page, row.query, toInt(row.clicks), toInt(row.impressions), toNum(row.ctr), toNum(row.position)]));
+
+    insertRows(database, 'gsc_dimensions', ['snapshot_id', 'dimension_type', 'dimension_value', 'search_type', 'clicks', 'impressions', 'ctr', 'position'], [
+      ...mapDimensionRows(snapshot.id, 'country', datasets.countries || [], 'country'),
+      ...mapDimensionRows(snapshot.id, 'device', datasets.devices || [], 'device'),
+      ...mapDimensionRows(snapshot.id, 'searchAppearance', datasets.searchAppearances || [], 'appearance'),
+      ...mapDimensionRows(snapshot.id, 'searchType', datasets.searchTypes || [], 'type')
+    ]);
 
     database.exec('COMMIT');
   } catch (err) {
@@ -260,6 +291,19 @@ function insertRows(database, table, columns, rows) {
   rows.forEach(row => stmt.run(...row));
 }
 
+function mapDimensionRows(snapshotId, dimensionType, rows, valueKey) {
+  return rows.map(row => [
+    snapshotId,
+    dimensionType,
+    String(row[valueKey] || row.dimension || 'unknown'),
+    String(row.searchType || row.type || 'web'),
+    toInt(row.clicks),
+    toInt(row.impressions),
+    toNum(row.ctr),
+    toNum(row.position)
+  ]);
+}
+
 function listDatabaseSnapshots({source} = {}) {
   const database = getDb();
   const rows = source
@@ -323,6 +367,84 @@ function getGscSnapshotTrends({siteUrl, limit = 50} = {}) {
     });
 }
 
+function getGscDeepAnalysis({siteUrl, limit = 50, minImpressions = 100} = {}) {
+  const database = getDb();
+  const safeLimit = Math.max(5, Math.min(Number(limit) || 50, 200));
+  const safeMinImpressions = Math.max(1, Number(minImpressions) || 100);
+  const snapshots = getLatestGscSnapshots(database, siteUrl);
+  const latest = snapshots[0] || null;
+  const previous = snapshots[1] || null;
+
+  if (!latest) {
+    return {
+      meta: {
+        siteUrl: siteUrl || null,
+        latestSnapshot: null,
+        previousSnapshot: null,
+        hasComparison: false,
+        minImpressions: safeMinImpressions
+      },
+      summary: emptyDeepSummary(),
+      pageDecay: [],
+      keywordVolatility: [],
+      lowCtrOpportunities: [],
+      cannibalization: [],
+      queryIntent: [],
+      newKeywords: [],
+      lostKeywords: [],
+      dimensions: {
+        countries: [],
+        devices: [],
+        searchAppearances: [],
+        searchTypes: []
+      }
+    };
+  }
+
+  const latestPages = getRows(database, 'gsc_pages', latest.id);
+  const previousPages = previous ? getRows(database, 'gsc_pages', previous.id) : [];
+  const latestQueries = getRows(database, 'gsc_queries', latest.id);
+  const previousQueries = previous ? getRows(database, 'gsc_queries', previous.id) : [];
+  const latestPageQueries = getRows(database, 'gsc_page_queries', latest.id);
+
+  const pageDecay = buildPageDecay(latestPages, previousPages, safeMinImpressions, safeLimit);
+  const keywordVolatility = buildKeywordVolatility(latestQueries, previousQueries, safeMinImpressions, safeLimit);
+  const lowCtrOpportunities = buildLowCtrOpportunities(latestPageQueries, safeMinImpressions, safeLimit);
+  const cannibalization = buildCannibalization(latestPageQueries, safeMinImpressions, safeLimit);
+  const queryIntent = buildQueryIntent(latestQueries, safeMinImpressions, safeLimit);
+  const keywordMovement = buildNewLostKeywords(latestQueries, previousQueries, safeMinImpressions, safeLimit);
+  const dimensions = buildDimensionBreakdowns(database, latest.id);
+
+  return {
+    meta: {
+      siteUrl: latest.site_url,
+      latestSnapshot: mapSnapshotRow(latest),
+      previousSnapshot: previous ? mapSnapshotRow(previous) : null,
+      hasComparison: Boolean(previous),
+      minImpressions: safeMinImpressions
+    },
+    summary: {
+      pageDecayCount: pageDecay.length,
+      clickLoss: pageDecay.reduce((sum, row) => sum + Math.max(0, row.clicksLost || 0), 0),
+      keywordVolatilityCount: keywordVolatility.length,
+      lowCtrOpportunityCount: lowCtrOpportunities.length,
+      potentialClicks: Math.round(lowCtrOpportunities.reduce((sum, row) => sum + (row.potentialClicks || 0), 0)),
+      cannibalizationCount: cannibalization.length,
+      newKeywordCount: keywordMovement.newKeywords.length,
+      lostKeywordCount: keywordMovement.lostKeywords.length,
+      intentMix: summarizeIntentMix(queryIntent)
+    },
+    pageDecay,
+    keywordVolatility,
+    lowCtrOpportunities,
+    cannibalization,
+    queryIntent,
+    newKeywords: keywordMovement.newKeywords,
+    lostKeywords: keywordMovement.lostKeywords,
+    dimensions
+  };
+}
+
 function getDatabaseStats() {
   const database = getDb();
   const row = database.prepare(`
@@ -336,6 +458,295 @@ function getDatabaseStats() {
     FROM snapshots
   `).get();
   return row;
+}
+
+function getLatestGscSnapshots(database, siteUrl) {
+  const where = siteUrl ? 'WHERE source = ? AND site_url = ?' : 'WHERE source = ?';
+  const args = siteUrl ? ['gsc', siteUrl] : ['gsc'];
+  return database.prepare(`
+    SELECT * FROM snapshots
+    ${where}
+    ORDER BY captured_at DESC
+    LIMIT 2
+  `).all(...args);
+}
+
+function getRows(database, table, snapshotId) {
+  const orderBy = table === 'gsc_trend' ? 'date ASC' : 'impressions DESC';
+  return database.prepare(`SELECT * FROM ${table} WHERE snapshot_id = ? ORDER BY ${orderBy}`).all(snapshotId);
+}
+
+function buildPageDecay(latestRows, previousRows, minImpressions, limit) {
+  const latestByPage = byKey(latestRows, 'page');
+  return previousRows
+    .filter(previous => previous.impressions >= minImpressions || previous.clicks >= 5)
+    .map(previous => {
+      const latest = latestByPage.get(previous.page) || zeroPerformanceRow({page: previous.page});
+      const clicksLost = Math.max(0, previous.clicks - latest.clicks);
+      const impressionsLost = Math.max(0, previous.impressions - latest.impressions);
+      return {
+        page: previous.page,
+        clicks: latest.clicks,
+        previousClicks: previous.clicks,
+        clicksDelta: latest.clicks - previous.clicks,
+        clicksLost,
+        clicksChangePct: percentChange(latest.clicks, previous.clicks),
+        impressions: latest.impressions,
+        previousImpressions: previous.impressions,
+        impressionsDelta: latest.impressions - previous.impressions,
+        impressionsLost,
+        ctr: latest.ctr,
+        previousCtr: previous.ctr,
+        ctrDelta: latest.ctr - previous.ctr,
+        position: latest.position,
+        previousPosition: previous.position,
+        positionDelta: latest.position - previous.position,
+        severity: scoreSeverity(clicksLost, impressionsLost, latest.position - previous.position)
+      };
+    })
+    .filter(row => row.clicksLost >= 5 || row.impressionsLost >= minImpressions || row.positionDelta >= 2)
+    .sort((a, b) => (b.clicksLost - a.clicksLost) || (b.impressionsLost - a.impressionsLost))
+    .slice(0, limit);
+}
+
+function buildKeywordVolatility(latestRows, previousRows, minImpressions, limit) {
+  const latestByQuery = byKey(latestRows, 'query_text');
+  return previousRows
+    .filter(previous => previous.impressions >= minImpressions)
+    .map(previous => {
+      const latest = latestByQuery.get(previous.query_text) || zeroPerformanceRow({query_text: previous.query_text});
+      const positionDelta = latest.position ? latest.position - previous.position : 100 - previous.position;
+      return {
+        query: previous.query_text,
+        intent: classifySearchIntent(previous.query_text),
+        clicks: latest.clicks,
+        previousClicks: previous.clicks,
+        clicksDelta: latest.clicks - previous.clicks,
+        impressions: latest.impressions,
+        previousImpressions: previous.impressions,
+        impressionsDelta: latest.impressions - previous.impressions,
+        ctr: latest.ctr,
+        previousCtr: previous.ctr,
+        position: latest.position || null,
+        previousPosition: previous.position,
+        positionDelta,
+        direction: positionDelta > 0 ? 'down' : 'up'
+      };
+    })
+    .filter(row => Math.abs(row.positionDelta) >= 3 || Math.abs(row.clicksDelta) >= 10)
+    .sort((a, b) => Math.abs(b.positionDelta) - Math.abs(a.positionDelta))
+    .slice(0, limit);
+}
+
+function buildLowCtrOpportunities(rows, minImpressions, limit) {
+  return rows
+    .filter(row => row.impressions >= minImpressions && row.position > 0 && row.position <= 15)
+    .map(row => {
+      const expectedCtr = expectedCtrByPosition(row.position);
+      const potentialClicks = Math.max(0, (expectedCtr - row.ctr) * row.impressions);
+      return {
+        page: row.page,
+        query: row.query_text,
+        intent: classifySearchIntent(row.query_text),
+        clicks: row.clicks,
+        impressions: row.impressions,
+        ctr: row.ctr,
+        expectedCtr,
+        ctrGap: expectedCtr - row.ctr,
+        potentialClicks,
+        position: row.position
+      };
+    })
+    .filter(row => row.ctrGap > 0.005 && row.potentialClicks >= 3)
+    .sort((a, b) => b.potentialClicks - a.potentialClicks)
+    .slice(0, limit);
+}
+
+function buildCannibalization(rows, minImpressions, limit) {
+  const grouped = new Map();
+  rows
+    .filter(row => row.impressions >= Math.max(10, minImpressions / 5))
+    .forEach(row => {
+      const list = grouped.get(row.query_text) || [];
+      list.push(row);
+      grouped.set(row.query_text, list);
+    });
+
+  return [...grouped.entries()]
+    .map(([query, pages]) => {
+      const sortedPages = pages.sort((a, b) => b.impressions - a.impressions);
+      const totalImpressions = sortedPages.reduce((sum, row) => sum + row.impressions, 0);
+      const totalClicks = sortedPages.reduce((sum, row) => sum + row.clicks, 0);
+      const leader = sortedPages[0];
+      const leaderShare = totalImpressions ? leader.impressions / totalImpressions : 0;
+      return {
+        query,
+        intent: classifySearchIntent(query),
+        competingPages: sortedPages.length,
+        totalClicks,
+        totalImpressions,
+        leaderShare,
+        risk: leaderShare < 0.55 ? 'high' : leaderShare < 0.75 ? 'medium' : 'low',
+        pages: sortedPages.slice(0, 5).map(row => ({
+          page: row.page,
+          clicks: row.clicks,
+          impressions: row.impressions,
+          ctr: row.ctr,
+          position: row.position,
+          share: totalImpressions ? row.impressions / totalImpressions : 0
+        }))
+      };
+    })
+    .filter(row => row.competingPages >= 2 && row.totalImpressions >= minImpressions && row.leaderShare < 0.85)
+    .sort((a, b) => (b.totalImpressions - a.totalImpressions) || (a.leaderShare - b.leaderShare))
+    .slice(0, limit);
+}
+
+function buildQueryIntent(rows, minImpressions, limit) {
+  return rows
+    .filter(row => row.impressions >= minImpressions)
+    .map(row => ({
+      query: row.query_text,
+      intent: classifySearchIntent(row.query_text),
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position
+    }))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, limit);
+}
+
+function buildNewLostKeywords(latestRows, previousRows, minImpressions, limit) {
+  const latestByQuery = byKey(latestRows, 'query_text');
+  const previousByQuery = byKey(previousRows, 'query_text');
+  const newKeywords = latestRows
+    .filter(row => row.impressions >= minImpressions && !previousByQuery.has(row.query_text))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, limit)
+    .map(row => mapKeywordMovement(row, 'new'));
+
+  const lostKeywords = previousRows
+    .filter(row => row.impressions >= minImpressions && !latestByQuery.has(row.query_text))
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, limit)
+    .map(row => mapKeywordMovement(row, 'lost'));
+
+  return {newKeywords, lostKeywords};
+}
+
+function buildDimensionBreakdowns(database, snapshotId) {
+  const rows = database.prepare(`
+    SELECT dimension_type, dimension_value, search_type, clicks, impressions, ctr, position
+    FROM gsc_dimensions
+    WHERE snapshot_id = ?
+    ORDER BY dimension_type, impressions DESC
+  `).all(snapshotId);
+
+  const pick = type => rows
+    .filter(row => row.dimension_type === type)
+    .map(row => ({
+      value: row.dimension_value,
+      searchType: row.search_type,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position
+    }));
+
+  return {
+    countries: pick('country'),
+    devices: pick('device'),
+    searchAppearances: pick('searchAppearance'),
+    searchTypes: pick('searchType')
+  };
+}
+
+function emptyDeepSummary() {
+  return {
+    pageDecayCount: 0,
+    clickLoss: 0,
+    keywordVolatilityCount: 0,
+    lowCtrOpportunityCount: 0,
+    potentialClicks: 0,
+    cannibalizationCount: 0,
+    newKeywordCount: 0,
+    lostKeywordCount: 0,
+    intentMix: []
+  };
+}
+
+function byKey(rows, key) {
+  return new Map(rows.map(row => [row[key], row]));
+}
+
+function zeroPerformanceRow(extra = {}) {
+  return {
+    clicks: 0,
+    impressions: 0,
+    ctr: 0,
+    position: 0,
+    ...extra
+  };
+}
+
+function percentChange(current, previous) {
+  if (!previous) return current ? 1 : 0;
+  return (current - previous) / previous;
+}
+
+function scoreSeverity(clicksLost, impressionsLost, positionDelta) {
+  const score = clicksLost * 3 + impressionsLost * 0.05 + Math.max(0, positionDelta) * 8;
+  if (score >= 80) return 'high';
+  if (score >= 30) return 'medium';
+  return 'low';
+}
+
+function expectedCtrByPosition(position) {
+  if (position <= 1) return 0.28;
+  if (position <= 2) return 0.16;
+  if (position <= 3) return 0.11;
+  if (position <= 5) return 0.07;
+  if (position <= 8) return 0.04;
+  if (position <= 10) return 0.028;
+  if (position <= 15) return 0.014;
+  return 0.006;
+}
+
+function classifySearchIntent(query = '') {
+  const text = query.toLowerCase();
+  const has = terms => terms.some(term => text.includes(term));
+
+  if (has(['near me', '附近', '地址', '门店', 'location', 'hours', '营业时间'])) return 'local';
+  if (has(['buy', 'price', 'coupon', 'discount', 'order', 'shop', '购买', '价格', '优惠', '折扣', '官网'])) return 'transactional';
+  if (has(['best', 'review', 'vs', 'compare', 'alternative', 'top', '推荐', '评测', '对比', '哪个好'])) return 'commercial';
+  if (has(['login', 'signin', 'download', 'app', 'brand', 'official', '登录', '下载'])) return 'navigational';
+  if (has(['how', 'what', 'why', 'guide', 'tutorial', 'tips', 'meaning', '怎么', '如何', '是什么', '为什么', '教程', '指南'])) return 'informational';
+  return 'mixed';
+}
+
+function mapKeywordMovement(row, status) {
+  return {
+    query: row.query_text,
+    status,
+    intent: classifySearchIntent(row.query_text),
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: row.ctr,
+    position: row.position
+  };
+}
+
+function summarizeIntentMix(rows) {
+  const summary = rows.reduce((map, row) => {
+    const current = map.get(row.intent) || {intent: row.intent, clicks: 0, impressions: 0, queries: 0};
+    current.clicks += row.clicks;
+    current.impressions += row.impressions;
+    current.queries += 1;
+    map.set(row.intent, current);
+    return map;
+  }, new Map());
+  return [...summary.values()].sort((a, b) => b.impressions - a.impressions);
 }
 
 function getMigrationStatus() {
@@ -419,6 +830,7 @@ function toNum(value) {
 module.exports = {
   backupDatabase,
   getDatabaseStats,
+  getGscDeepAnalysis,
   getGscSnapshotTrends,
   getMigrationStatus,
   initLocalDatabase,

@@ -6,6 +6,7 @@ const {google} = require('googleapis');
 const {
   backupDatabase,
   getDatabaseStats,
+  getGscDeepAnalysis,
   getGscSnapshotTrends,
   getMigrationStatus,
   initLocalDatabase,
@@ -278,6 +279,27 @@ function defaultDatesFromQuery(q) {
   return {startDate: fmt(start), endDate: fmt(end)};
 }
 
+function transformDimensionRows(data, key) {
+  return (data.rows || []).map(r => ({
+    [key]: r.keys && r.keys.length ? r.keys[0] : 'unknown',
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0
+  }));
+}
+
+function transformSearchTypeRow(data, type) {
+  const row = data.rows && data.rows[0] ? data.rows[0] : {};
+  return {
+    type,
+    clicks: row.clicks || 0,
+    impressions: row.impressions || 0,
+    ctr: row.ctr || 0,
+    position: row.position || 0
+  };
+}
+
 function parseDateParam(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -386,6 +408,36 @@ app.get('/api/gsc/page-query', async (req, res) => {
   }
 });
 
+app.get('/api/gsc/breakdowns', async (req, res) => {
+  try {
+    const auth = authorizeFromDisk();
+    if (!auth) return res.status(401).json({error: 'Not authorized. Visit /auth to authorize.'});
+    const siteUrl = req.query.siteUrl;
+    if (!siteUrl) return res.status(400).json({error: 'Missing siteUrl query parameter.'});
+    const {startDate, endDate} = defaultDatesFromQuery(req.query);
+    const rowLimit = parseInt(req.query.rowLimit || '5000', 10);
+    const base = {startDate, endDate, rowLimit, startRow: 0};
+    const searchTypes = ['web', 'image', 'video', 'news'];
+
+    const [countries, devices, searchAppearances, ...typedResults] = await Promise.all([
+      querySearchAnalytics(auth, siteUrl, {...base, dimensions: ['country']}),
+      querySearchAnalytics(auth, siteUrl, {...base, dimensions: ['device']}),
+      querySearchAnalytics(auth, siteUrl, {...base, dimensions: ['searchAppearance']}),
+      ...searchTypes.map(type => querySearchAnalytics(auth, siteUrl, {...base, type}))
+    ]);
+
+    res.json({
+      countries: transformDimensionRows(countries, 'country'),
+      devices: transformDimensionRows(devices, 'device'),
+      searchAppearances: transformDimensionRows(searchAppearances, 'appearance'),
+      searchTypes: typedResults.map((data, index) => transformSearchTypeRow(data, searchTypes[index]))
+    });
+  } catch (err) {
+    console.error('Breakdowns error', err.message);
+    res.status(500).json({error: err.message});
+  }
+});
+
 app.post('/api/history/snapshots', (req, res) => {
   try {
     ensureDataDirs();
@@ -476,6 +528,20 @@ app.get('/api/history/gsc-trends', (req, res) => {
     res.json({rows, totalRows: rows.length});
   } catch (err) {
     console.error('GSC history trend error', err.message);
+    res.status(500).json({error: err.message});
+  }
+});
+
+app.get('/api/history/gsc-deep-analysis', (req, res) => {
+  try {
+    const analysis = getGscDeepAnalysis({
+      siteUrl: req.query.siteUrl,
+      limit: req.query.limit,
+      minImpressions: req.query.minImpressions
+    });
+    res.json(analysis);
+  } catch (err) {
+    console.error('GSC deep analysis error', err.message);
     res.status(500).json({error: err.message});
   }
 });

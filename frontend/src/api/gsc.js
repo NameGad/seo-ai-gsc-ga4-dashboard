@@ -68,6 +68,10 @@ export function getPageQuery(params) {
   return request('/api/gsc/page-query', params);
 }
 
+export function getBreakdowns(params) {
+  return request('/api/gsc/breakdowns', params);
+}
+
 export function saveSnapshot(snapshot) {
   return post('/api/history/snapshots', snapshot);
 }
@@ -82,6 +86,10 @@ export function getHistoryStats() {
 
 export function getGscHistoryTrends(params = {}) {
   return request('/api/history/gsc-trends', params);
+}
+
+export function getGscDeepAnalysis(params = {}) {
+  return request('/api/history/gsc-deep-analysis', params);
 }
 
 export function getSnapshot(id) {

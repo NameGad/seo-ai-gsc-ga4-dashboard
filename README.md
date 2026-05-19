@@ -27,6 +27,7 @@ npm start
 数据工作台说明：
 
 - `GSC`：当前可用的 Search Console 数据工作台。
+- `Insights`：GSC 深度分析工作区，基于本地历史快照识别页面衰退、关键词波动、低 CTR 机会、关键词内耗、搜索意图和新增/流失关键词。
 - `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
 - `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。
 - `History` 还会基于 SQLite 展示 GSC 历史趋势，比较不同快照之间的 clicks、impressions、CTR 和 position 变化。
@@ -47,7 +48,18 @@ npm start
   - `gsc_pages`：按页面维度的数据。
   - `gsc_queries`：按关键词维度的数据。
   - `gsc_page_queries`：页面 + 关键词组合数据。
+  - `gsc_dimensions`：国家、设备、搜索外观和搜索类型拆分数据。
 - 服务启动时会自动把 `data/snapshots/` 里已有的 JSON 快照同步进 SQLite。
+
+GSC 深度分析说明：
+
+- 页面衰退监控：对比最近两次快照，识别点击、曝光和排名下滑的页面。
+- 关键词排名波动：对比最近两次快照，发现排名大幅上升或下降的 query。
+- 低 CTR 机会：按排名预期 CTR 估算可争取的潜在点击。
+- 关键词内耗：发现同一 query 下多个页面同时获得曝光且主导页面不明确的情况。
+- Query intent 自动分类：用可维护的规则先分为 informational、commercial、transactional、navigational、local、mixed，后续可升级为 AI/embedding 分类。
+- 国家、设备、搜索外观、搜索类型拆分：新版本会在 `Load Data` 时同步保存这些维度；旧快照没有这部分数据，需要重新加载一次。
+- 新增 / 流失关键词检测：对比最近两次快照，列出新出现和消失的 query。
 
 测试与验证：
 
@@ -83,9 +95,11 @@ npm run dev
 - `GET /api/gsc/pages?siteUrl=...` — 按页面返回数据。
 - `GET /api/gsc/queries?siteUrl=...` — 按查询返回数据。
 - `GET /api/gsc/page-query?siteUrl=...` — 按 page+query 返回数据。
+- `GET /api/gsc/breakdowns?siteUrl=...` — 返回 country、device、searchAppearance 和 search type 拆分数据。
 - `POST /api/history/snapshots` — 将一次数据拉取结果保存为本地 JSON 快照。
 - `GET /api/history/snapshots` — 返回本地历史快照列表。
 - `GET /api/history/gsc-trends` — 返回按快照聚合的 GSC 历史趋势和相邻快照变化。
+- `GET /api/history/gsc-deep-analysis` — 返回 GSC 深度分析结果，可选 `siteUrl`、`limit`、`minImpressions`。
 - `GET /api/history/stats` — 返回本地 SQLite 数据库统计。
 - `GET /api/history/migrations` — 返回本地 SQLite schema migration 状态。
 - `POST /api/history/backup` — 创建一份本地 SQLite 数据库备份。

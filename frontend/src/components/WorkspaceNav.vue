@@ -1,5 +1,5 @@
 <script setup>
-import { BarChart3, BrainCircuit, Database, LineChart } from '@lucide/vue';
+import { BarChart3, BrainCircuit, Database, LineChart, Radar } from '@lucide/vue';
 
 defineProps({
   active: {
@@ -16,6 +16,7 @@ const emit = defineEmits(['change']);
 
 const items = [
   { key: 'gsc', label: 'GSC', note: 'Search performance', icon: LineChart },
+  { key: 'insights', label: 'Insights', note: 'Deep SEO analysis', icon: Radar },
   { key: 'ga', label: 'GA4', note: 'Traffic and events', icon: BarChart3 },
   { key: 'history', label: 'History', note: 'Local snapshots', icon: Database },
   { key: 'ai', label: 'AI', note: 'Analysis ready', icon: BrainCircuit }

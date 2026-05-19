@@ -4,13 +4,14 @@ import { BarChart3, BrainCircuit, Files, Gauge, Search, Sparkles, TrendingUp } f
 import AppHeader from './components/AppHeader.vue';
 import ControlBar from './components/ControlBar.vue';
 import DataTable from './components/DataTable.vue';
+import DeepAnalysisView from './components/DeepAnalysisView.vue';
 import FutureModule from './components/FutureModule.vue';
 import HistoryView from './components/HistoryView.vue';
 import MetricCards from './components/MetricCards.vue';
 import Panel from './components/Panel.vue';
 import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
-import { getGscHistoryTrends, getHistoryStats, getPageQuery, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
+import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getHistoryStats, getPageQuery, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
 import { defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
@@ -34,6 +35,7 @@ const sites = ref([]);
 const snapshots = ref([]);
 const historyStats = ref(null);
 const historyTrendRows = ref([]);
+const deepAnalysis = ref(null);
 const trendRows = ref([]);
 const topPages = ref([]);
 const topQueries = ref([]);
@@ -101,8 +103,21 @@ async function loadSnapshots() {
     snapshots.value = data.rows || [];
     historyStats.value = stats.stats || null;
     historyTrendRows.value = trends.rows || [];
+    await loadDeepAnalysis();
   } catch (err) {
     setStatus(err.message || '读取本地历史数据失败。', 'error');
+  }
+}
+
+async function loadDeepAnalysis() {
+  const params = {limit: 80, minImpressions: 100};
+  if (controls.siteUrl.trim()) params.siteUrl = controls.siteUrl.trim();
+  try {
+    const analysis = await getGscDeepAnalysis(params);
+    deepAnalysis.value = analysis;
+  } catch (err) {
+    deepAnalysis.value = null;
+    throw err;
   }
 }
 
@@ -122,11 +137,18 @@ async function loadData() {
     setStatus('Loading GSC data...');
     localStorage.setItem('gsc:lastSite', siteUrl);
 
-    const [trend, pages, queries, pageQuery] = await Promise.all([
+    const [trend, pages, queries, pageQuery, breakdowns] = await Promise.all([
       getTrend(params),
       getPages(params),
       getQueries(params),
-      getPageQuery(params)
+      getPageQuery(params),
+      getBreakdowns(params).catch(err => ({
+        countries: [],
+        devices: [],
+        searchAppearances: [],
+        searchTypes: [],
+        warning: err.message
+      }))
     ]);
 
     trendRows.value = trend.rows || [];
@@ -177,11 +199,20 @@ async function loadData() {
         trend: trend.rows || [],
         pages: pages.rows || [],
         queries: queries.rows || [],
-        pageQuery: pageQuery.rows || []
+        pageQuery: pageQuery.rows || [],
+        countries: breakdowns.countries || [],
+        devices: breakdowns.devices || [],
+        searchAppearances: breakdowns.searchAppearances || [],
+        searchTypes: breakdowns.searchTypes || []
       }
     });
     await loadSnapshots();
-    setStatus(`Loaded and saved locally: ${snapshot.id}`, 'success');
+    setStatus(
+      breakdowns.warning
+        ? `Loaded core data and saved locally: ${snapshot.id}. Dimension breakdown skipped: ${breakdowns.warning}`
+        : `Loaded and saved locally: ${snapshot.id}`,
+      breakdowns.warning ? 'default' : 'success'
+    );
   } catch (err) {
     if (err.status === 401) alert('未授权：请先点击 Auth 完成授权。');
     setStatus(err.message || '加载失败，请查看控制台。', 'error');
@@ -252,6 +283,13 @@ onMounted(() => {
         </aside>
       </section>
     </template>
+
+    <DeepAnalysisView
+      v-else-if="activeView === 'insights'"
+      :analysis="deepAnalysis"
+      :busy="busy"
+      @refresh="loadSnapshots"
+    />
 
     <FutureModule
       v-else-if="activeView === 'ga'"
