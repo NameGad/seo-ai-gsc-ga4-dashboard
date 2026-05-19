@@ -395,6 +395,30 @@ td.bad{color:#be123c;font-weight:700}
 }
 .future-visual svg{width:128px;height:128px;stroke-width:1.2}
 .history-layout{display:grid;gap:16px}
+.site-history-group{
+  display:grid;
+  gap:0;
+  border-top:1px solid var(--line-soft);
+}
+.site-history-group:first-of-type{border-top:0}
+.site-history-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  padding:14px 16px 0;
+}
+.site-history-head strong{
+  font-size:14px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.site-history-head span{
+  font-size:12px;
+  color:var(--muted);
+  white-space:nowrap;
+}
 .history-trend-table{
   max-height:360px;
   overflow:auto;
@@ -493,6 +517,8 @@ td.bad{color:#be123c;font-weight:700}
   .metrics{grid-template-columns:1fr 1fr}
   .analysis-summary{grid-template-columns:1fr 1fr}
   .analysis-toolbar{display:grid}
+  .site-history-head{display:grid}
+  .site-history-head span{white-space:normal}
   .side-stack{grid-template-columns:1fr}
   .chart-wrap{height:300px}
   .future-grid{grid-template-columns:1fr}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 - 2026-05-19
+
+- Fixed GSC History deltas so changes are calculated within the same property only.
+- Added snapshot data fingerprints to skip saving duplicate GSC pulls for the same site and date range.
+- Deduplicated History trend and snapshot lists while keeping raw local files untouched.
+- Improved History UI grouping by property.
+
 ## 1.2.0 - 2026-05-19
 
 - Added a GSC Deep Analysis / Insights workspace.

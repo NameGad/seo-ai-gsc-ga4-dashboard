@@ -1,9 +1,10 @@
 <script setup>
+import { computed } from 'vue';
 import { Database, FileJson, RefreshCw, TrendingUp } from '@lucide/vue';
 import HistoryTrendChart from './HistoryTrendChart.vue';
 import Panel from './Panel.vue';
 
-defineProps({
+const props = defineProps({
   snapshots: {
     type: Array,
     default: () => []
@@ -23,6 +24,22 @@ defineProps({
 });
 
 const emit = defineEmits(['refresh']);
+
+const trendGroups = computed(() => {
+  const groups = new Map();
+  props.trendRows.forEach(row => {
+    const rows = groups.get(row.siteUrl) || [];
+    rows.push(row);
+    groups.set(row.siteUrl, rows);
+  });
+
+  return [...groups.entries()]
+    .map(([siteUrl, rows]) => ({
+      siteUrl,
+      rows: rows.slice().sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
+    }))
+    .sort((a, b) => a.siteUrl.localeCompare(b.siteUrl));
+});
 
 function formatDate(value) {
   if (!value) return '-';
@@ -67,50 +84,56 @@ function deltaClass(value, invert = false) {
 
 <template>
   <section class="history-layout">
-    <Panel title="GSC Historical Trend" :icon="TrendingUp" :meta="`${trendRows.length} snapshots`">
-      <HistoryTrendChart :rows="trendRows" />
-      <div class="history-trend-table">
-        <div v-if="trendRows.length === 0" class="empty">No trend snapshots yet</div>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>Captured</th>
-              <th>Property</th>
-              <th>Period</th>
-              <th>Clicks</th>
-              <th>Δ Clicks</th>
-              <th>Impressions</th>
-              <th>Δ Impr.</th>
-              <th>CTR</th>
-              <th>Δ CTR</th>
-              <th>Position</th>
-              <th>Δ Pos.</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in trendRows.slice().reverse()" :key="row.id">
-              <td>{{ formatDate(row.capturedAt) }}</td>
-              <td>{{ row.siteUrl }}</td>
-              <td>{{ row.dateRange?.startDate }} → {{ row.dateRange?.endDate }}</td>
-              <td class="num">{{ formatNumber(row.clicks) }}</td>
-              <td class="num" :class="deltaClass(row.delta?.clicks)">{{ formatDelta(row.delta?.clicks) }}</td>
-              <td class="num">{{ formatNumber(row.impressions) }}</td>
-              <td class="num" :class="deltaClass(row.delta?.impressions)">{{ formatDelta(row.delta?.impressions) }}</td>
-              <td class="num">{{ formatPct(row.ctr) }}</td>
-              <td class="num" :class="deltaClass(row.delta?.ctr)">{{ formatDelta(row.delta?.ctr, 'pct') }}</td>
-              <td class="num">{{ formatPosition(row.position) }}</td>
-              <td class="num" :class="deltaClass(row.delta?.position, true)">{{ formatDelta(row.delta?.position, 'position') }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <Panel title="GSC Historical Trend" :icon="TrendingUp" :meta="`${trendRows.length} unique snapshots`">
+      <div v-if="trendGroups.length === 0" class="empty">No trend snapshots yet</div>
+      <template v-else>
+        <div v-for="group in trendGroups" :key="group.siteUrl" class="site-history-group">
+          <div class="site-history-head">
+            <strong>{{ group.siteUrl }}</strong>
+            <span>{{ group.rows.length }} unique snapshots · deltas are calculated inside this property only</span>
+          </div>
+          <HistoryTrendChart :rows="group.rows" />
+          <div class="history-trend-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Captured</th>
+                  <th>Period</th>
+                  <th>Clicks</th>
+                  <th>Δ Clicks</th>
+                  <th>Impressions</th>
+                  <th>Δ Impr.</th>
+                  <th>CTR</th>
+                  <th>Δ CTR</th>
+                  <th>Position</th>
+                  <th>Δ Pos.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in group.rows.slice().reverse()" :key="row.id">
+                  <td>{{ formatDate(row.capturedAt) }}</td>
+                  <td>{{ row.dateRange?.startDate }} → {{ row.dateRange?.endDate }}</td>
+                  <td class="num">{{ formatNumber(row.clicks) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.clicks)">{{ formatDelta(row.delta?.clicks) }}</td>
+                  <td class="num">{{ formatNumber(row.impressions) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.impressions)">{{ formatDelta(row.delta?.impressions) }}</td>
+                  <td class="num">{{ formatPct(row.ctr) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.ctr)">{{ formatDelta(row.delta?.ctr, 'pct') }}</td>
+                  <td class="num">{{ formatPosition(row.position) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.position, true)">{{ formatDelta(row.delta?.position, 'position') }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
     </Panel>
 
-    <Panel title="Local Data Vault" :icon="Database" :meta="`${snapshots.length} snapshots`">
+    <Panel title="Local Data Vault" :icon="Database" :meta="`${snapshots.length} unique snapshots`">
       <div v-if="dbStats" class="db-stats">
         <div>
-          <strong>{{ dbStats.snapshots || 0 }}</strong>
-          <span>Snapshots</span>
+          <strong>{{ dbStats.unique_snapshots || snapshots.length || 0 }}</strong>
+          <span>Unique snapshots</span>
         </div>
         <div>
           <strong>{{ dbStats.sites || 0 }}</strong>

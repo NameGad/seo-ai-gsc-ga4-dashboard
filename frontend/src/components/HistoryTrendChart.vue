@@ -15,8 +15,11 @@ const canvasRef = ref(null);
 let chart;
 
 function labelFor(row) {
-  const end = row.dateRange?.endDate || row.capturedAt;
-  return end ? String(end).slice(0, 10) : '-';
+  if (!row.capturedAt) return row.dateRange?.endDate || '-';
+  const date = new Date(row.capturedAt);
+  return Number.isNaN(date.getTime())
+    ? String(row.capturedAt).slice(0, 10)
+    : date.toLocaleString(undefined, {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
 
 function render() {

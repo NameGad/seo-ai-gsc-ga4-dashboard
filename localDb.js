@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const {DatabaseSync} = require('node:sqlite');
 
 let db;
@@ -141,6 +142,19 @@ const MIGRATIONS = [
           ON gsc_dimensions(snapshot_id, dimension_type, impressions DESC);
       `);
     }
+  },
+  {
+    version: 4,
+    name: 'snapshot_data_fingerprint',
+    up(database) {
+      database.exec(`
+        ALTER TABLE snapshots ADD COLUMN data_hash TEXT;
+      `);
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS idx_snapshots_dedupe
+          ON snapshots(source, site_url, start_date, end_date, data_hash);
+      `);
+    }
   }
 ];
 
@@ -161,6 +175,7 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
   const database = getDb();
   const datasets = snapshot.datasets || {};
   const dateRange = snapshot.dateRange || {};
+  const dataHash = snapshot.dataHash || createSnapshotDataHash(snapshot);
   const datasetSizes = snapshot.datasetSizes || Object.fromEntries(
     Object.entries(datasets).map(([key, value]) => [key, Array.isArray(value) ? value.length : 0])
   );
@@ -181,8 +196,8 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
 
     database.prepare(`
       INSERT OR REPLACE INTO snapshots (
-        id, source, site_url, start_date, end_date, captured_at, metrics_json, dataset_sizes_json, raw_snapshot_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, source, site_url, start_date, end_date, captured_at, metrics_json, dataset_sizes_json, raw_snapshot_path, data_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       snapshot.id,
       snapshot.source,
@@ -192,7 +207,8 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
       snapshot.capturedAt,
       JSON.stringify(snapshot.metrics || {}),
       JSON.stringify(datasetSizes),
-      rawSnapshotPath
+      rawSnapshotPath,
+      dataHash
     );
 
     database.prepare('DELETE FROM gsc_trend WHERE snapshot_id = ?').run(snapshot.id);
@@ -309,14 +325,14 @@ function listDatabaseSnapshots({source} = {}) {
   const rows = source
     ? database.prepare('SELECT * FROM snapshots WHERE source = ? ORDER BY captured_at DESC').all(source)
     : database.prepare('SELECT * FROM snapshots ORDER BY captured_at DESC').all();
-  return rows.map(mapSnapshotRow);
+  return dedupeSnapshotRows(rows).map(mapSnapshotRow);
 }
 
 function getGscSnapshotTrends({siteUrl, limit = 50} = {}) {
   const database = getDb();
   const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
   const where = siteUrl ? 'WHERE s.source = ? AND s.site_url = ?' : 'WHERE s.source = ?';
-  const args = siteUrl ? ['gsc', siteUrl, safeLimit] : ['gsc', safeLimit];
+  const args = siteUrl ? ['gsc', siteUrl] : ['gsc'];
   const rows = database.prepare(`
     SELECT
       s.id,
@@ -324,6 +340,7 @@ function getGscSnapshotTrends({siteUrl, limit = 50} = {}) {
       s.start_date,
       s.end_date,
       s.captured_at,
+      s.data_hash,
       COALESCE(SUM(t.clicks), 0) AS clicks,
       COALESCE(SUM(t.impressions), 0) AS impressions,
       CASE WHEN COALESCE(SUM(t.impressions), 0) > 0
@@ -337,34 +354,46 @@ function getGscSnapshotTrends({siteUrl, limit = 50} = {}) {
     ${where}
     GROUP BY s.id
     ORDER BY s.captured_at DESC
-    LIMIT ?
   `).all(...args);
 
-  return rows
-    .reverse()
-    .map((row, index, orderedRows) => {
-      const previous = orderedRows[index - 1];
-      return {
-        id: row.id,
-        siteUrl: row.site_url,
-        dateRange: {
-          startDate: row.start_date,
-          endDate: row.end_date
-        },
-        capturedAt: row.captured_at,
-        days: row.days,
-        clicks: row.clicks,
-        impressions: row.impressions,
-        ctr: row.ctr,
-        position: row.position,
-        delta: previous ? {
-          clicks: row.clicks - previous.clicks,
-          impressions: row.impressions - previous.impressions,
-          ctr: row.ctr - previous.ctr,
-          position: row.position - previous.position
-        } : null
-      };
-    });
+  const dedupedRows = dedupeSnapshotRows(rows).sort((a, b) => {
+    const siteCompare = a.site_url.localeCompare(b.site_url);
+    if (siteCompare) return siteCompare;
+    return new Date(a.captured_at) - new Date(b.captured_at);
+  });
+  const previousBySite = new Map();
+  const mappedRows = dedupedRows.map(row => {
+    const previous = previousBySite.get(row.site_url);
+    const mapped = {
+      id: row.id,
+      siteUrl: row.site_url,
+      dateRange: {
+        startDate: row.start_date,
+        endDate: row.end_date
+      },
+      capturedAt: row.captured_at,
+      dataHash: row.data_hash,
+      days: row.days,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position,
+      delta: previous ? {
+        clicks: row.clicks - previous.clicks,
+        impressions: row.impressions - previous.impressions,
+        ctr: row.ctr - previous.ctr,
+        position: row.position - previous.position
+      } : null
+    };
+    previousBySite.set(row.site_url, row);
+    return mapped;
+  });
+
+  return siteUrl
+    ? mappedRows.slice(-safeLimit)
+    : mappedRows
+      .sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
+      .slice(-safeLimit);
 }
 
 function getGscDeepAnalysis({siteUrl, limit = 50, minImpressions = 100} = {}) {
@@ -445,11 +474,37 @@ function getGscDeepAnalysis({siteUrl, limit = 50, minImpressions = 100} = {}) {
   };
 }
 
+function findDuplicateSnapshot(snapshot) {
+  const database = getDb();
+  const dateRange = snapshot.dateRange || {};
+  const dataHash = snapshot.dataHash || createSnapshotDataHash(snapshot);
+  const row = database.prepare(`
+    SELECT *
+    FROM snapshots
+    WHERE source = ?
+      AND site_url = ?
+      AND COALESCE(start_date, '') = COALESCE(?, '')
+      AND COALESCE(end_date, '') = COALESCE(?, '')
+      AND data_hash = ?
+    ORDER BY captured_at DESC
+    LIMIT 1
+  `).get(
+    snapshot.source,
+    snapshot.siteUrl,
+    dateRange.startDate || null,
+    dateRange.endDate || null,
+    dataHash
+  );
+
+  return row ? mapSnapshotRow(row) : null;
+}
+
 function getDatabaseStats() {
   const database = getDb();
   const row = database.prepare(`
     SELECT
       COUNT(*) AS snapshots,
+      COUNT(DISTINCT source || char(31) || site_url || char(31) || COALESCE(start_date, '') || char(31) || COALESCE(end_date, '') || char(31) || COALESCE(data_hash, id)) AS unique_snapshots,
       COUNT(DISTINCT site_url) AS sites,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_trend WHERE gsc_trend.snapshot_id = snapshots.id)), 0) AS trend_rows,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_pages WHERE gsc_pages.snapshot_id = snapshots.id)), 0) AS page_rows,
@@ -463,12 +518,12 @@ function getDatabaseStats() {
 function getLatestGscSnapshots(database, siteUrl) {
   const where = siteUrl ? 'WHERE source = ? AND site_url = ?' : 'WHERE source = ?';
   const args = siteUrl ? ['gsc', siteUrl] : ['gsc'];
-  return database.prepare(`
+  const rows = database.prepare(`
     SELECT * FROM snapshots
     ${where}
     ORDER BY captured_at DESC
-    LIMIT 2
   `).all(...args);
+  return dedupeSnapshotRows(rows).slice(0, 2);
 }
 
 function getRows(database, table, snapshotId) {
@@ -787,6 +842,56 @@ function syncSnapshotsFromDisk(snapshotsPath) {
   return {synced};
 }
 
+function createSnapshotDataHash(snapshot) {
+  return crypto
+    .createHash('sha256')
+    .update(stableStringify(normalizeSnapshotForHash(snapshot)))
+    .digest('hex');
+}
+
+function normalizeSnapshotForHash(snapshot) {
+  const datasets = {};
+  Object.entries(snapshot.datasets || {}).forEach(([key, value]) => {
+    if (Array.isArray(value) && value.length === 0) return;
+    datasets[key] = value;
+  });
+
+  return {
+    source: snapshot.source || 'gsc',
+    siteUrl: snapshot.siteUrl,
+    dateRange: snapshot.dateRange || {},
+    datasets
+  };
+}
+
+function dedupeSnapshotRows(rows) {
+  const seen = new Set();
+  return rows.filter(row => {
+    const key = snapshotDedupeKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function snapshotDedupeKey(row) {
+  return [
+    row.source,
+    row.site_url,
+    row.start_date || '',
+    row.end_date || '',
+    row.data_hash || row.id
+  ].join('\u001f');
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function mapSnapshotRow(row) {
   return {
     id: row.id,
@@ -797,6 +902,7 @@ function mapSnapshotRow(row) {
       endDate: row.end_date
     },
     capturedAt: row.captured_at,
+    dataHash: row.data_hash || null,
     metrics: safeJson(row.metrics_json, {}),
     datasetSizes: safeJson(row.dataset_sizes_json, {}),
     rawSnapshotPath: row.raw_snapshot_path
@@ -829,6 +935,8 @@ function toNum(value) {
 
 module.exports = {
   backupDatabase,
+  createSnapshotDataHash,
+  findDuplicateSnapshot,
   getDatabaseStats,
   getGscDeepAnalysis,
   getGscSnapshotTrends,

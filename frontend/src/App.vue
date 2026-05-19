@@ -208,7 +208,9 @@ async function loadData() {
     });
     await loadSnapshots();
     setStatus(
-      breakdowns.warning
+      snapshot.cached
+        ? `No data changes detected. Used cached snapshot: ${snapshot.id}`
+        : breakdowns.warning
         ? `Loaded core data and saved locally: ${snapshot.id}. Dimension breakdown skipped: ${breakdowns.warning}`
         : `Loaded and saved locally: ${snapshot.id}`,
       breakdowns.warning ? 'default' : 'success'

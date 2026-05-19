@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const {google} = require('googleapis');
 const {
   backupDatabase,
+  createSnapshotDataHash,
+  findDuplicateSnapshot,
   getDatabaseStats,
   getGscDeepAnalysis,
   getGscSnapshotTrends,
@@ -462,6 +464,23 @@ app.post('/api/history/snapshots', (req, res) => {
       ),
       datasets
     };
+    snapshot.dataHash = createSnapshotDataHash(snapshot);
+
+    const duplicate = findDuplicateSnapshot(snapshot);
+    if (duplicate) {
+      return res.json({
+        id: duplicate.id,
+        source: duplicate.source,
+        siteUrl: duplicate.siteUrl,
+        dateRange: duplicate.dateRange,
+        capturedAt: duplicate.capturedAt,
+        metrics: duplicate.metrics,
+        datasetSizes: duplicate.datasetSizes,
+        cached: true,
+        duplicateOf: duplicate.id,
+        message: 'No data changes detected. Reused the existing local snapshot.'
+      });
+    }
 
     const rawPath = snapshotPath(id);
     fs.writeFileSync(rawPath, JSON.stringify(snapshot, null, 2));

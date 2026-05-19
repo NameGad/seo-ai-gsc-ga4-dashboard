@@ -31,12 +31,14 @@ npm start
 - `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
 - `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。
 - `History` 还会基于 SQLite 展示 GSC 历史趋势，比较不同快照之间的 clicks、impressions、CTR 和 position 变化。
+- 历史趋势会按不同 GSC property 分组，同一网站内部单独计算变化，避免不同网站之间互相比。
 - `AI`：预留 AI 分析入口，后续可以读取本地历史快照，做趋势解释、异常检测、CTR 优化建议和 GSC + GA 联动分析。
 
 本地数据存储策略：
 
 - 原始层：每次成功加载 GSC 后，会保存完整 JSON 快照到 `data/snapshots/`。
 - 结构化层：同一份快照会同步写入 `data/seo-data.sqlite`，用于快速查询、历史趋势和后续 AI 分析。
+- 去重层：每次保存前会计算数据指纹；同一站点、同一日期范围、同一份 GSC 数据不会重复保存，前端会复用已有快照。
 - 迁移层：SQLite 使用 `schema_migrations` 记录数据库版本，后续新增 GA4/AI 表时会按 migration 升级。
 - 备份层：可以通过 `POST /api/history/backup` 生成 `data/backups/seo-data-*.sqlite`。
 - 当前 SQLite 表包括：
