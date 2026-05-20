@@ -1,6 +1,6 @@
 <script setup>
 import { Chart, Filler, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip, CategoryScale } from 'chart.js';
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler);
 
@@ -13,6 +13,13 @@ const props = defineProps({
 
 const canvasRef = ref(null);
 let chart;
+
+const rowsSignature = computed(() => props.rows.map(row => [
+  row.date,
+  Math.round(Number(row.clicks || 0)),
+  Math.round(Number(row.impressions || 0)),
+  Number(row.position || 0).toFixed(4)
+].join(':')).join('|'));
 
 function render() {
   if (!canvasRef.value) return;
@@ -67,7 +74,7 @@ function render() {
 }
 
 onMounted(render);
-watch(() => props.rows, render, { deep: true });
+watch(rowsSignature, render);
 onBeforeUnmount(() => {
   if (chart) chart.destroy();
 });

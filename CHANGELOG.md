@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2 - 2026-05-20
+
+- Fixed Chart.js refresh behavior so the Performance Trend chart is remounted when the page type filter changes.
+
 ## 1.3.1 - 2026-05-20
 
 - Fixed the GSC Performance Trend chart and KPI cards so they follow the selected page type filter.

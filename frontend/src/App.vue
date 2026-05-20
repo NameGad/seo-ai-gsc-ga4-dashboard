@@ -87,6 +87,17 @@ const performanceTrendRows = computed(() => {
   }];
 });
 
+const performanceTrendKey = computed(() => [
+  pageTypeFilter.value,
+  performanceTrendRows.value.length,
+  performanceTrendRows.value.map(row => [
+    row.date,
+    Math.round(Number(row.clicks || 0)),
+    Math.round(Number(row.impressions || 0)),
+    Number(row.position || 0).toFixed(4)
+  ].join(':')).join('|')
+].join('::'));
+
 const filteredPages = computed(() => {
   if (pageTypeFilter.value === 'All') return rawPages.value;
   return rawPages.value.filter(row => detectShopifyType(row.page) === pageTypeFilter.value);
@@ -419,7 +430,7 @@ onMounted(() => {
             :icon="TrendingUp"
             :meta="`${performanceTrendRows.length} points`"
           >
-            <TrendChart :rows="performanceTrendRows" />
+            <TrendChart :key="performanceTrendKey" :rows="performanceTrendRows" />
           </Panel>
 
           <div class="tables">
