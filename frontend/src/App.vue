@@ -13,10 +13,14 @@ import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
 import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPageTypeTrend, getPages, getQueries, getSites, getSnapshot, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
 import { useI18n } from './i18n';
-import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
+import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatDateInput, formatNumber, formatPct } from './utils';
 
 const {locale, t, tv} = useI18n();
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
+const savedStartDate = localStorage.getItem('gsc:startDate') || '';
+const savedEndDate = localStorage.getItem('gsc:endDate') || '';
+const savedView = localStorage.getItem('seo-dashboard:activeView') || 'gsc';
+const savedPageType = localStorage.getItem('gsc:pageTypeFilter') || 'All';
 const savedBrandTerms = localStorage.getItem('gsc:brandTerms') || '';
 const savedQuerySegment = localStorage.getItem('gsc:querySegment') || 'All';
 const dates = defaultDateRange();
@@ -27,8 +31,8 @@ const preferredTheme = savedTheme
 const controls = reactive({
   siteUrl: savedSite,
   selectedSite: '',
-  startDate: dates.startDate,
-  endDate: dates.endDate
+  startDate: savedStartDate || dates.startDate,
+  endDate: savedEndDate || dates.endDate
 });
 
 const status = reactive({
@@ -38,7 +42,7 @@ const status = reactive({
 
 const themeMode = ref(preferredTheme);
 const busy = ref(false);
-const activeView = ref('gsc');
+const activeView = ref(['gsc', 'insights', 'ga', 'history', 'ai'].includes(savedView) ? savedView : 'gsc');
 const sites = ref([]);
 const snapshots = ref([]);
 const historyStats = ref(null);
@@ -50,13 +54,20 @@ const rawPageTypeTrend = ref([]);
 const rawPages = ref([]);
 const rawQueries = ref([]);
 const rawPageQuery = ref([]);
-const pageTypeFilter = ref('All');
+const pageTypeFilter = ref(PAGE_TYPES.includes(savedPageType) ? savedPageType : 'All');
 const querySegment = ref(['All', 'Branded', 'Non-branded'].includes(savedQuerySegment) ? savedQuerySegment : 'All');
 const brandTerms = ref(savedBrandTerms);
 const workspaceSnapshotId = ref('');
 const workspaceDatasets = ref({});
 const pageTypeTrendLoading = ref(false);
 const querySegments = ['All', 'Branded', 'Non-branded'];
+const datePresets = [
+  {value: 'last7', labelKey: 'preset.last7', days: 7},
+  {value: 'last28', labelKey: 'preset.last28', days: 28},
+  {value: 'last90', labelKey: 'preset.last90', days: 90},
+  {value: 'monthToDate', labelKey: 'preset.monthToDate'},
+  {value: 'previousMonth', labelKey: 'preset.previousMonth'}
+];
 
 const activeProperty = computed(() => controls.siteUrl || 'No property selected');
 const metrics = computed(() => {
@@ -72,6 +83,14 @@ const metrics = computed(() => {
     ctr: rows.length ? formatPct(avgCtr) : '-',
     position: rows.length ? avgPosition.toFixed(2) : '-'
   };
+});
+
+const activeDatePreset = computed(() => {
+  const match = datePresets.find(preset => {
+    const range = dateRangeForPreset(preset.value);
+    return range.startDate === controls.startDate && range.endDate === controls.endDate;
+  });
+  return match?.value || '';
 });
 
 const performanceTrendRows = computed(() => {
@@ -392,6 +411,44 @@ function setStatus(message, type = 'default') {
 
 function toggleTheme() {
   themeMode.value = themeMode.value === 'dark' ? 'light' : 'dark';
+}
+
+function applyDatePreset(presetValue) {
+  const range = dateRangeForPreset(presetValue);
+  controls.startDate = range.startDate;
+  controls.endDate = range.endDate;
+}
+
+function dateRangeForPreset(presetValue) {
+  const safeEnd = startOfDay(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+
+  if (presetValue === 'monthToDate') {
+    const start = new Date(safeEnd.getFullYear(), safeEnd.getMonth(), 1);
+    return toDateRange(start, safeEnd);
+  }
+
+  if (presetValue === 'previousMonth') {
+    const start = new Date(safeEnd.getFullYear(), safeEnd.getMonth() - 1, 1);
+    const end = new Date(safeEnd.getFullYear(), safeEnd.getMonth(), 0);
+    return toDateRange(start, end);
+  }
+
+  const preset = datePresets.find(item => item.value === presetValue);
+  const days = preset?.days || 28;
+  const start = new Date(safeEnd);
+  start.setDate(safeEnd.getDate() - (days - 1));
+  return toDateRange(start, safeEnd);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function toDateRange(startDate, endDate) {
+  return {
+    startDate: formatDateInput(startDate),
+    endDate: formatDateInput(endDate)
+  };
 }
 
 function parseBrandTerms(value = '') {
@@ -808,9 +865,10 @@ function weightedAveragePosition(rows) {
   return rows.reduce((sum, row) => sum + ((row.position || 0) * (row.impressions || 0)), 0) / impressions;
 }
 
-onMounted(() => {
+onMounted(async () => {
   handleAuthReturn();
-  loadSnapshots();
+  await loadSnapshots();
+  if (pageTypeFilter.value !== 'All') await ensurePageTypeTrendRows();
 });
 
 watch(themeMode, mode => {
@@ -818,6 +876,26 @@ watch(themeMode, mode => {
   document.documentElement.style.colorScheme = mode;
   localStorage.setItem('seo-dashboard:theme', mode);
 }, {immediate: true});
+
+watch(activeView, view => {
+  localStorage.setItem('seo-dashboard:activeView', view);
+});
+
+watch(() => controls.siteUrl, siteUrl => {
+  localStorage.setItem('gsc:lastSite', siteUrl || '');
+});
+
+watch(() => controls.startDate, startDate => {
+  localStorage.setItem('gsc:startDate', startDate || '');
+});
+
+watch(() => controls.endDate, endDate => {
+  localStorage.setItem('gsc:endDate', endDate || '');
+});
+
+watch(pageTypeFilter, type => {
+  localStorage.setItem('gsc:pageTypeFilter', type);
+});
 
 watch(querySegment, segment => {
   localStorage.setItem('gsc:querySegment', segment);
@@ -850,9 +928,12 @@ watch(locale, mode => {
         v-model="controls"
         :sites="sites"
         :busy="busy"
+        :date-presets="datePresets"
+        :active-date-preset="activeDatePreset"
         @auth="startAuth"
         @load-sites="loadSites"
         @load-data="loadData"
+        @apply-date-preset="applyDatePreset"
       />
 
       <MetricCards :metrics="metrics" />

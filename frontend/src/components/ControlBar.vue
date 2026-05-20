@@ -14,10 +14,18 @@ const props = defineProps({
   busy: {
     type: Boolean,
     default: false
+  },
+  datePresets: {
+    type: Array,
+    default: () => []
+  },
+  activeDatePreset: {
+    type: String,
+    default: ''
   }
 });
 
-const emit = defineEmits(['update:modelValue', 'auth', 'load-sites', 'load-data']);
+const emit = defineEmits(['update:modelValue', 'auth', 'load-sites', 'load-data', 'apply-date-preset']);
 const {t} = useI18n();
 
 function patch(values) {
@@ -81,5 +89,20 @@ function selectSite(event) {
       <RefreshCw :class="{ spinning: busy }" />
       <span>{{ busy ? t('control.loading') : t('control.load') }}</span>
     </button>
+
+    <div class="date-presets" aria-label="Date presets">
+      <span>{{ t('control.datePresets') }}</span>
+      <div class="segmented-control compact">
+        <button
+          v-for="preset in datePresets"
+          :key="preset.value"
+          type="button"
+          :class="{ active: activeDatePreset === preset.value }"
+          @click="emit('apply-date-preset', preset.value)"
+        >
+          {{ t(preset.labelKey) }}
+        </button>
+      </div>
+    </div>
   </section>
 </template>

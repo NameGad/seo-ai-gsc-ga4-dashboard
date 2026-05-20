@@ -290,6 +290,20 @@ h1{font-size:22px;line-height:1.1;margin:0;font-weight:720}
   backdrop-filter:blur(18px);
   margin-bottom:16px;
 }
+.date-presets{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-top:2px;
+}
+.date-presets > span{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+  white-space:nowrap;
+}
 .workspace-nav{
   display:grid;
   grid-template-columns:repeat(5,minmax(0,1fr));
@@ -380,6 +394,10 @@ input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,9
   min-height:34px;
   padding:0 11px;
   font-size:12px;
+}
+.segmented-control.compact button{
+  min-height:30px;
+  padding:0 10px;
 }
 .segmented-control button.active{
   border-color:var(--blue);
@@ -814,6 +832,7 @@ td.bad{color:var(--bad);font-weight:700}
   .status{justify-self:stretch;border-radius:var(--radius)}
   .workspace-nav{grid-template-columns:1fr 1fr}
   .toolbar{grid-template-columns:1fr}
+  .date-presets{display:grid;justify-content:stretch}
   .metrics{grid-template-columns:1fr 1fr}
   .channel-filter{display:grid}
   .query-filter{grid-template-columns:1fr}

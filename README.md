@@ -28,6 +28,7 @@ npm start
 
 - 页面右上角支持 `中文 / EN` 语言切换，选择会保存在当前浏览器本地。
 - 页面右上角支持 `Light / Dark` 模式切换，选择会保存在当前浏览器本地，刷新后自动沿用。
+- 控制栏支持 `Last 7D / Last 28D / Last 90D / Month to date / Previous month` 日期快捷选择，并会记住上次使用的站点、日期、页面类型和当前模块。
 - UI 采用克制的 AI 产品风格渐变系统，覆盖品牌、导航、筛选器、指标卡片、图表容器和历史数据模块。
 - `GSC`：当前可用的 Search Console 数据工作台。
 - `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Performance Trend、KPI 卡片、Top Pages、Top Queries、低 CTR 机会和关键词机会。

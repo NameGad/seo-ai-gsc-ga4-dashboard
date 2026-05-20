@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.12 - 2026-05-20
+
+- Added date preset chips for Last 7D, Last 28D, Last 90D, Month to date, and Previous month.
+- Persisted workspace preferences for the active module, site URL, date range, and page type filter.
+- Updated date input formatting to use local calendar dates so preset ranges do not shift across time zones.
+
 ## 1.3.11 - 2026-05-20
 
 - Added a persistent language switcher for English and Chinese.
