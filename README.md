@@ -27,7 +27,7 @@ npm start
 数据工作台说明：
 
 - `GSC`：当前可用的 Search Console 数据工作台。
-- `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Top Pages、Top Queries、低 CTR 机会和关键词机会。
+- `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Performance Trend、KPI 卡片、Top Pages、Top Queries、低 CTR 机会和关键词机会。
 - `Insights`：GSC 深度分析工作区，基于本地历史快照识别页面衰退、关键词波动、低 CTR 机会、关键词内耗、搜索意图和新增/流失关键词。
 - `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
 - `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。
@@ -53,6 +53,7 @@ npm start
   - `gsc_page_queries`：页面 + 关键词组合数据。
   - `gsc_dimensions`：国家、设备、搜索外观和搜索类型拆分数据。
   - `gsc_page_type_summary`：按 Collection、Product、Blog、Other 聚合的页面类型趋势数据。
+  - `gsc_page_type_trend`：按日期 + 页面类型聚合的 daily trend，用于让 Performance Trend 跟随页面类型筛选。
 - 服务启动时会自动把 `data/snapshots/` 里已有的 JSON 快照同步进 SQLite。
 
 GSC 页面类型分组说明：
@@ -107,6 +108,7 @@ npm run dev
 - `GET /api/gsc/pages?siteUrl=...` — 按页面返回数据。
 - `GET /api/gsc/queries?siteUrl=...` — 按查询返回数据。
 - `GET /api/gsc/page-query?siteUrl=...` — 按 page+query 返回数据。
+- `GET /api/gsc/page-type-trend?siteUrl=...` — 按 date+page 抓取并聚合为 Collection/Product/Blog/Other 的 daily trend。
 - `GET /api/gsc/breakdowns?siteUrl=...` — 返回 country、device、searchAppearance 和 search type 拆分数据。
 - `POST /api/history/snapshots` — 将一次数据拉取结果保存为本地 JSON 快照。
 - `GET /api/history/snapshots` — 返回本地历史快照列表。

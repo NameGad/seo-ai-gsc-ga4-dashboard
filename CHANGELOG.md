@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1 - 2026-05-20
+
+- Fixed the GSC Performance Trend chart and KPI cards so they follow the selected page type filter.
+- Added a live `date + page` GSC aggregation endpoint for daily Collection/Product/Blog/Other trends.
+- Saved page type daily trend rows into SQLite for future analysis.
+
 ## 1.3.0 - 2026-05-20
 
 - Added GSC page type segmentation for Collection, Product, Blog, and Other pages.

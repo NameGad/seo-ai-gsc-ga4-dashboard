@@ -68,6 +68,10 @@ export function getPageQuery(params) {
   return request('/api/gsc/page-query', params);
 }
 
+export function getPageTypeTrend(params) {
+  return request('/api/gsc/page-type-trend', params);
+}
+
 export function getBreakdowns(params) {
   return request('/api/gsc/breakdowns', params);
 }

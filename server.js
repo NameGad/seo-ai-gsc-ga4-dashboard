@@ -15,7 +15,8 @@ const {
   initLocalDatabase,
   listDatabaseSnapshots,
   saveSnapshotToDatabase,
-  syncSnapshotsFromDisk
+  syncSnapshotsFromDisk,
+  classifyPageType
 } = require('./localDb');
 
 const app = express();
@@ -303,6 +304,48 @@ function transformSearchTypeRow(data, type) {
   };
 }
 
+function transformPageTypeTrendRows(data) {
+  const buckets = new Map();
+  (data.rows || []).forEach(row => {
+    const date = row.keys && row.keys[0] ? row.keys[0] : null;
+    const page = row.keys && row.keys[1] ? row.keys[1] : '';
+    if (!date) return;
+    const pageType = classifyPageType(page);
+    const key = `${date}\u001f${pageType}`;
+    const current = buckets.get(key) || {
+      date,
+      pageType,
+      clicks: 0,
+      impressions: 0,
+      weightedPosition: 0,
+      pages: new Set()
+    };
+    const clicks = row.clicks || 0;
+    const impressions = row.impressions || 0;
+    current.clicks += clicks;
+    current.impressions += impressions;
+    current.weightedPosition += (row.position || 0) * impressions;
+    current.pages.add(page);
+    buckets.set(key, current);
+  });
+
+  return [...buckets.values()]
+    .map(row => ({
+      date: row.date,
+      pageType: row.pageType,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.impressions ? row.clicks / row.impressions : 0,
+      position: row.impressions ? row.weightedPosition / row.impressions : 0,
+      pagesCount: row.pages.size
+    }))
+    .sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare) return dateCompare;
+      return a.pageType.localeCompare(b.pageType);
+    });
+}
+
 function parseDateParam(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -407,6 +450,25 @@ app.get('/api/gsc/page-query', async (req, res) => {
     res.json({rows, totalRows: data.totalRows || rows.length});
   } catch (err) {
     console.error('Page-query error', err.message);
+    res.status(500).json({error: err.message});
+  }
+});
+
+app.get('/api/gsc/page-type-trend', async (req, res) => {
+  try {
+    const auth = authorizeFromDisk();
+    if (!auth) return res.status(401).json({error: 'Not authorized. Visit /auth to authorize.'});
+    const siteUrl = req.query.siteUrl;
+    if (!siteUrl) return res.status(400).json({error: 'Missing siteUrl query parameter.'});
+    const {startDate, endDate} = defaultDatesFromQuery(req.query);
+    const rowLimit = parseInt(req.query.rowLimit || '25000', 10);
+    const startRow = parseInt(req.query.startRow || '0', 10);
+    const requestBody = {startDate, endDate, dimensions: ['date', 'page'], rowLimit, startRow};
+    const data = await querySearchAnalytics(auth, siteUrl, requestBody);
+    const rows = transformPageTypeTrendRows(data);
+    res.json({rows, totalRows: rows.length, rawRows: data.totalRows || (data.rows || []).length});
+  } catch (err) {
+    console.error('Page type trend error', err.message);
     res.status(500).json({error: err.message});
   }
 });

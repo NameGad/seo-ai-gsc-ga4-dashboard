@@ -178,6 +178,29 @@ const MIGRATIONS = [
           ON gsc_page_type_summary(snapshot_id, impressions DESC);
       `);
     }
+  },
+  {
+    version: 6,
+    name: 'gsc_page_type_daily_trend',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS gsc_page_type_trend (
+          snapshot_id TEXT NOT NULL,
+          date TEXT NOT NULL,
+          page_type TEXT NOT NULL,
+          clicks INTEGER NOT NULL DEFAULT 0,
+          impressions INTEGER NOT NULL DEFAULT 0,
+          ctr REAL NOT NULL DEFAULT 0,
+          position REAL NOT NULL DEFAULT 0,
+          pages_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (snapshot_id, date, page_type),
+          FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gsc_page_type_trend_snapshot_date
+          ON gsc_page_type_trend(snapshot_id, date, page_type);
+      `);
+    }
   }
 ];
 
@@ -240,6 +263,7 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
     database.prepare('DELETE FROM gsc_page_queries WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_dimensions WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_page_type_summary WHERE snapshot_id = ?').run(snapshot.id);
+    database.prepare('DELETE FROM gsc_page_type_trend WHERE snapshot_id = ?').run(snapshot.id);
 
     insertRows(database, 'gsc_trend', ['snapshot_id', 'date', 'clicks', 'impressions', 'ctr', 'position'],
       (datasets.trend || []).map(row => [snapshot.id, row.date, toInt(row.clicks), toInt(row.impressions), toNum(row.ctr), toNum(row.position)]));
@@ -265,6 +289,13 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
       'gsc_page_type_summary',
       ['snapshot_id', 'page_type', 'clicks', 'impressions', 'ctr', 'position', 'pages_count', 'queries_count'],
       aggregatePageTypeSummary(snapshot.id, datasets.pages || [], datasets.pageQuery || [])
+    );
+
+    insertRows(
+      database,
+      'gsc_page_type_trend',
+      ['snapshot_id', 'date', 'page_type', 'clicks', 'impressions', 'ctr', 'position', 'pages_count'],
+      mapPageTypeTrendRows(snapshot.id, datasets.pageTypeTrend || [])
     );
 
     database.exec('COMMIT');
@@ -408,6 +439,19 @@ function aggregatePageTypeSummary(snapshotId, pageRows, pageQueryRows) {
       bucket.pages.size,
       bucket.queries.size
     ]);
+}
+
+function mapPageTypeTrendRows(snapshotId, rows) {
+  return rows.map(row => [
+    snapshotId,
+    row.date,
+    row.pageType,
+    toInt(row.clicks),
+    toInt(row.impressions),
+    toNum(row.ctr),
+    toNum(row.position),
+    toInt(row.pagesCount)
+  ]);
 }
 
 function listDatabaseSnapshots({source} = {}) {
@@ -684,7 +728,8 @@ function getDatabaseStats() {
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_pages WHERE gsc_pages.snapshot_id = snapshots.id)), 0) AS page_rows,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_queries WHERE gsc_queries.snapshot_id = snapshots.id)), 0) AS query_rows,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_queries WHERE gsc_page_queries.snapshot_id = snapshots.id)), 0) AS page_query_rows,
-      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_type_summary WHERE gsc_page_type_summary.snapshot_id = snapshots.id)), 0) AS page_type_rows
+      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_type_summary WHERE gsc_page_type_summary.snapshot_id = snapshots.id)), 0) AS page_type_rows,
+      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_type_trend WHERE gsc_page_type_trend.snapshot_id = snapshots.id)), 0) AS page_type_trend_rows
     FROM snapshots
   `).get();
   return row;

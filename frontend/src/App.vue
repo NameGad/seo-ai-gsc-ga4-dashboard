@@ -11,7 +11,7 @@ import MetricCards from './components/MetricCards.vue';
 import Panel from './components/Panel.vue';
 import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
-import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
+import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPageTypeTrend, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
 import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
@@ -38,6 +38,7 @@ const historyTrendRows = ref([]);
 const pageTypeTrendRows = ref([]);
 const deepAnalysis = ref(null);
 const trendRows = ref([]);
+const rawPageTypeTrend = ref([]);
 const rawPages = ref([]);
 const rawQueries = ref([]);
 const rawPageQuery = ref([]);
@@ -45,17 +46,45 @@ const pageTypeFilter = ref('All');
 
 const activeProperty = computed(() => controls.siteUrl || 'No property selected');
 const metrics = computed(() => {
-  const totalClicks = trendRows.value.reduce((sum, row) => sum + (row.clicks || 0), 0);
-  const totalImpressions = trendRows.value.reduce((sum, row) => sum + (row.impressions || 0), 0);
+  const rows = performanceTrendRows.value;
+  const totalClicks = rows.reduce((sum, row) => sum + (row.clicks || 0), 0);
+  const totalImpressions = rows.reduce((sum, row) => sum + (row.impressions || 0), 0);
   const avgCtr = totalImpressions ? totalClicks / totalImpressions : 0;
-  const avgPosition = trendRows.value.reduce((sum, row) => sum + (row.position || 0), 0) / Math.max(1, trendRows.value.length);
+  const avgPosition = weightedAveragePosition(rows);
 
   return {
-    clicks: trendRows.value.length ? formatNumber(totalClicks) : '-',
-    impressions: trendRows.value.length ? formatNumber(totalImpressions) : '-',
-    ctr: trendRows.value.length ? formatPct(avgCtr) : '-',
-    position: trendRows.value.length ? avgPosition.toFixed(2) : '-'
+    clicks: rows.length ? formatNumber(totalClicks) : '-',
+    impressions: rows.length ? formatNumber(totalImpressions) : '-',
+    ctr: rows.length ? formatPct(avgCtr) : '-',
+    position: rows.length ? avgPosition.toFixed(2) : '-'
   };
+});
+
+const performanceTrendRows = computed(() => {
+  if (pageTypeFilter.value === 'All') return trendRows.value;
+
+  const dailyRows = rawPageTypeTrend.value
+    .filter(row => row.pageType === pageTypeFilter.value)
+    .map(row => ({
+      date: row.date,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position
+    }));
+
+  if (dailyRows.length) return dailyRows;
+  if (!filteredPages.value.length) return [];
+
+  const clicks = filteredPages.value.reduce((sum, row) => sum + (row.clicks || 0), 0);
+  const impressions = filteredPages.value.reduce((sum, row) => sum + (row.impressions || 0), 0);
+  return [{
+    date: `${controls.startDate || 'Start'} → ${controls.endDate || 'End'}`,
+    clicks,
+    impressions,
+    ctr: impressions ? clicks / impressions : 0,
+    position: weightedAveragePosition(filteredPages.value)
+  }];
 });
 
 const filteredPages = computed(() => {
@@ -220,8 +249,12 @@ async function loadData() {
     setStatus('Loading GSC data...');
     localStorage.setItem('gsc:lastSite', siteUrl);
 
-    const [trend, pages, queries, pageQuery, breakdowns] = await Promise.all([
+    const [trend, pageTypeTrend, pages, queries, pageQuery, breakdowns] = await Promise.all([
       getTrend(params),
+      getPageTypeTrend(params).catch(err => ({
+        rows: [],
+        warning: err.message
+      })),
       getPages(params),
       getQueries(params),
       getPageQuery(params),
@@ -235,6 +268,7 @@ async function loadData() {
     ]);
 
     trendRows.value = trend.rows || [];
+    rawPageTypeTrend.value = pageTypeTrend.rows || [];
     rawPages.value = pages.rows || [];
     rawQueries.value = queries.rows || [];
     rawPageQuery.value = pageQuery.rows || [];
@@ -249,6 +283,7 @@ async function loadData() {
       metrics: metrics.value,
       datasets: {
         trend: trend.rows || [],
+        pageTypeTrend: pageTypeTrend.rows || [],
         pages: pages.rows || [],
         queries: queries.rows || [],
         pageQuery: pageQuery.rows || [],
@@ -262,10 +297,12 @@ async function loadData() {
     setStatus(
       snapshot.cached
         ? `No data changes detected. Used cached snapshot: ${snapshot.id}`
+        : pageTypeTrend.warning
+        ? `Loaded data and saved locally: ${snapshot.id}. Page type trend skipped: ${pageTypeTrend.warning}`
         : breakdowns.warning
         ? `Loaded core data and saved locally: ${snapshot.id}. Dimension breakdown skipped: ${breakdowns.warning}`
         : `Loaded and saved locally: ${snapshot.id}`,
-      breakdowns.warning ? 'default' : 'success'
+      pageTypeTrend.warning || breakdowns.warning ? 'default' : 'success'
     );
   } catch (err) {
     if (err.status === 401) alert('未授权：请先点击 Auth 完成授权。');
@@ -323,6 +360,14 @@ function aggregateQueries(rows) {
     .sort((a, b) => b.impressions - a.impressions);
 }
 
+function weightedAveragePosition(rows) {
+  const impressions = rows.reduce((sum, row) => sum + (row.impressions || 0), 0);
+  if (!impressions) {
+    return rows.reduce((sum, row) => sum + (row.position || 0), 0) / Math.max(1, rows.length);
+  }
+  return rows.reduce((sum, row) => sum + ((row.position || 0) * (row.impressions || 0)), 0) / impressions;
+}
+
 onMounted(() => {
   handleAuthReturn();
   loadSnapshots();
@@ -369,8 +414,12 @@ onMounted(() => {
 
       <section class="workspace">
         <section>
-          <Panel title="Performance Trend" :icon="TrendingUp" :meta="`${trendRows.length} days`">
-            <TrendChart :rows="trendRows" />
+          <Panel
+            :title="pageTypeFilter === 'All' ? 'Performance Trend' : `${pageTypeFilter} Performance Trend`"
+            :icon="TrendingUp"
+            :meta="`${performanceTrendRows.length} points`"
+          >
+            <TrendChart :rows="performanceTrendRows" />
           </Panel>
 
           <div class="tables">
