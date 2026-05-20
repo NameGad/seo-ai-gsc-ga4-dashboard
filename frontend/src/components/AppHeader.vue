@@ -1,5 +1,6 @@
 <script setup>
-import { Activity, CircleAlert, CircleCheck, LineChart, Moon, Sun } from '@lucide/vue';
+import { Activity, CircleAlert, CircleCheck, Languages, LineChart, Moon, Sun } from '@lucide/vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({
   activeProperty: {
@@ -17,6 +18,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['toggle-theme']);
+const {locale, languageOptions, setLocale, t} = useI18n();
 
 const iconMap = {
   default: Activity,
@@ -32,22 +34,31 @@ const iconMap = {
         <LineChart />
       </div>
       <div>
-        <h1>GSC JS Dashboard</h1>
-        <div class="subline">{{ props.activeProperty || 'No property selected' }}</div>
+        <h1>{{ t('app.title') }}</h1>
+        <div class="subline">{{ props.activeProperty || t('app.noProperty') }}</div>
       </div>
     </div>
 
     <div class="topbar-actions">
+      <label class="language-toggle" :title="t('language.label')">
+        <Languages />
+        <select :value="locale" :aria-label="t('language.label')" @change="setLocale($event.target.value)">
+          <option v-for="option in languageOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+
       <button
         class="theme-toggle"
         type="button"
-        :aria-label="props.themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
-        :title="props.themeMode === 'dark' ? 'Light mode' : 'Dark mode'"
+        :aria-label="props.themeMode === 'dark' ? t('theme.lightMode') : t('theme.darkMode')"
+        :title="props.themeMode === 'dark' ? t('theme.lightMode') : t('theme.darkMode')"
         @click="emit('toggle-theme')"
       >
         <Sun v-if="props.themeMode === 'dark'" />
         <Moon v-else />
-        <span>{{ props.themeMode === 'dark' ? 'Light' : 'Dark' }}</span>
+        <span>{{ props.themeMode === 'dark' ? t('theme.light') : t('theme.dark') }}</span>
       </button>
 
       <div class="status" :class="props.status.type">

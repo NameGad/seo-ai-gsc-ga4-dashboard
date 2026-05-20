@@ -12,8 +12,10 @@ import Panel from './components/Panel.vue';
 import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
 import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPageTypeTrend, getPages, getQueries, getSites, getSnapshot, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
+import { useI18n } from './i18n';
 import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
+const {locale, t, tv} = useI18n();
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
 const savedBrandTerms = localStorage.getItem('gsc:brandTerms') || '';
 const savedQuerySegment = localStorage.getItem('gsc:querySegment') || 'All';
@@ -30,7 +32,7 @@ const controls = reactive({
 });
 
 const status = reactive({
-  message: 'Ready',
+  message: t('status.ready'),
   type: 'default'
 });
 
@@ -485,12 +487,12 @@ function chooseSeoAction(row, context) {
 
 function buildOpportunityReason(row, context) {
   const parts = [
-    `${formatNumber(row.impressions)} impressions`,
-    `rank ${row.position.toFixed(1)}`,
-    `${context.segment}`
+    t('reason.impressions', '{count} impressions', {count: formatNumber(row.impressions)}),
+    t('reason.rank', 'rank {rank}', {rank: row.position.toFixed(1)}),
+    tv(context.segment)
   ];
-  if (context.ctrGap > 0) parts.push(`${formatPct(context.ctrGap)} CTR gap`);
-  if (context.cannibalized) parts.push('multi-page query');
+  if (context.ctrGap > 0) parts.push(t('reason.ctrGap', '{gap} CTR gap', {gap: formatPct(context.ctrGap)}));
+  if (context.cannibalized) parts.push(t('reason.multiPage', 'multi-page query'));
   return parts.join(' · ');
 }
 
@@ -521,7 +523,7 @@ async function ensurePageTypeTrendRows() {
   if (!siteUrl || !controls.startDate || !controls.endDate) return;
 
   pageTypeTrendLoading.value = true;
-  setStatus('Fetching daily page type trend rows for Collection/Product/Blog filters...');
+  setStatus(t('status.fetchingPageType'));
   try {
     const pageTypeTrend = await getPageTypeTrend({
       siteUrl,
@@ -557,9 +559,9 @@ async function ensurePageTypeTrendRows() {
       };
       workspaceSnapshotId.value = snapshot.id || workspaceSnapshotId.value;
       await loadSnapshots({hydrateWorkspace: false});
-      setStatus(`Fetched and saved daily page type trend rows: ${rawPageTypeTrend.value.length} rows.`, 'success');
+      setStatus(t('status.pageTypeSaved', '', {count: rawPageTypeTrend.value.length}), 'success');
     } else {
-      setStatus('No daily page type trend rows were returned for this property and date range.', 'default');
+      setStatus(t('status.noPageTypeRows'), 'default');
     }
   } catch (err) {
     setStatus(err.message || '页面类型每日趋势拉取失败。', 'error');
@@ -572,10 +574,10 @@ function handleAuthReturn() {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get('auth');
   if (auth === 'success') {
-    setStatus('Google authorization successful. Token saved.', 'success');
+    setStatus(t('status.authSuccess'), 'success');
     window.history.replaceState({}, document.title, window.location.pathname);
   } else if (auth === 'error') {
-    setStatus(params.get('message') || 'Google authorization failed.', 'error');
+    setStatus(params.get('message') || t('status.authFailed'), 'error');
     window.history.replaceState({}, document.title, window.location.pathname);
   }
 }
@@ -587,13 +589,13 @@ function startAuth() {
 async function loadSites() {
   try {
     busy.value = true;
-    setStatus('Loading GSC properties...');
+    setStatus(t('status.loadingSites'));
     const data = await getSites();
     sites.value = data.rows || [];
-    setStatus(`Loaded ${sites.value.length} GSC properties.`, 'success');
+    setStatus(t('status.loadedSites', '', {count: sites.value.length}), 'success');
   } catch (err) {
-    if (err.status === 401) alert('未授权：请先点击 Auth 完成授权。');
-    setStatus(err.message || '加载 GSC properties 失败。', 'error');
+    if (err.status === 401) alert(t('status.notAuthorized'));
+    setStatus(err.message || t('status.loadSitesFailed'), 'error');
   } finally {
     busy.value = false;
   }
@@ -614,7 +616,7 @@ async function loadSnapshots({hydrateWorkspace = true} = {}) {
     if (hydrateWorkspace) await hydrateWorkspaceFromLatestSnapshot(data.rows || []);
     await loadDeepAnalysis();
   } catch (err) {
-    setStatus(err.message || '读取本地历史数据失败。', 'error');
+    setStatus(err.message || t('status.loadingSnapshotsFailed'), 'error');
   }
 }
 
@@ -630,7 +632,7 @@ async function hydrateWorkspaceFromLatestSnapshot(snapshotRows) {
 
   const snapshot = await getSnapshot(candidate.id);
   applySnapshotToWorkspace(snapshot);
-  setStatus(`Loaded latest local snapshot into GSC workspace: ${candidate.id}`, 'success');
+  setStatus(t('status.snapshotHydrated', '', {id: candidate.id}), 'success');
 }
 
 function applySnapshotToWorkspace(snapshot) {
@@ -663,7 +665,7 @@ async function loadDeepAnalysis() {
 async function loadData() {
   const siteUrl = controls.siteUrl.trim();
   if (!siteUrl) {
-    alert('请输入 Site URL');
+    alert(t('status.missingSite'));
     return;
   }
 
@@ -673,7 +675,7 @@ async function loadData() {
 
   try {
     busy.value = true;
-    setStatus('Loading GSC data...');
+    setStatus(t('status.loadingGsc'));
     localStorage.setItem('gsc:lastSite', siteUrl);
 
     const [trend, pageTypeTrend, pages, queries, pageQuery, breakdowns] = await Promise.all([
@@ -725,17 +727,17 @@ async function loadData() {
     await loadSnapshots({hydrateWorkspace: false});
     setStatus(
       snapshot.cached
-        ? `No data changes detected. Used cached snapshot: ${snapshot.id}`
+        ? t('status.cachedSnapshot', '', {id: snapshot.id})
         : pageTypeTrend.warning
-        ? `Loaded data and saved locally: ${snapshot.id}. Page type trend skipped: ${pageTypeTrend.warning}`
+        ? t('status.pageTypeSkipped', '', {id: snapshot.id, warning: pageTypeTrend.warning})
         : breakdowns.warning
-        ? `Loaded core data and saved locally: ${snapshot.id}. Dimension breakdown skipped: ${breakdowns.warning}`
-        : `Loaded and saved locally: ${snapshot.id}`,
+        ? t('status.breakdownSkipped', '', {id: snapshot.id, warning: breakdowns.warning})
+        : t('status.savedSnapshot', '', {id: snapshot.id}),
       pageTypeTrend.warning || breakdowns.warning ? 'default' : 'success'
     );
   } catch (err) {
-    if (err.status === 401) alert('未授权：请先点击 Auth 完成授权。');
-    setStatus(err.message || '加载失败，请查看控制台。', 'error');
+    if (err.status === 401) alert(t('status.notAuthorized'));
+    setStatus(err.message || t('status.loadFailed'), 'error');
   } finally {
     busy.value = false;
   }
@@ -824,6 +826,13 @@ watch(querySegment, segment => {
 watch(brandTerms, terms => {
   localStorage.setItem('gsc:brandTerms', terms);
 });
+
+watch(locale, mode => {
+  document.documentElement.lang = mode === 'zh' ? 'zh-CN' : 'en';
+  if (status.message === 'Ready' || status.message === '就绪') {
+    status.message = t('status.ready');
+  }
+}, {immediate: true});
 </script>
 
 <template>
@@ -852,11 +861,11 @@ watch(brandTerms, terms => {
         <div>
           <Funnel />
           <span>
-            <strong>Page type filter</strong>
+            <strong>{{ t('filter.pageType') }}</strong>
             <small>
               {{ workspaceDataReady
-                ? `Filtering ${workspaceSnapshotId ? `snapshot ${workspaceSnapshotId}` : 'current loaded data'}`
-                : 'Click Load Data or use a saved local snapshot to enable filtering.' }}
+                ? t('filter.workspaceReady', '', {target: workspaceSnapshotId ? `snapshot ${workspaceSnapshotId}` : t('filter.currentData')})
+                : t('filter.workspaceEmpty') }}
             </small>
           </span>
         </div>
@@ -868,7 +877,7 @@ watch(brandTerms, terms => {
             :class="{ active: pageTypeFilter === type }"
             @click="selectPageType(type)"
           >
-            {{ type }}
+            {{ tv(type) }}
           </button>
         </div>
       </section>
@@ -877,15 +886,14 @@ watch(brandTerms, terms => {
         <div>
           <Search />
           <span>
-            <strong>Query segment</strong>
+            <strong>{{ t('filter.querySegment') }}</strong>
             <small>
-              Split GSC queries by branded and non-branded demand. Active brand terms:
-              {{ effectiveBrandTerms.length ? effectiveBrandTerms.join(', ') : 'none' }}
+              {{ t('filter.querySegmentHelp', '', {terms: effectiveBrandTerms.length ? effectiveBrandTerms.join(', ') : t('filter.none')}) }}
             </small>
           </span>
         </div>
         <label class="brand-terms-field">
-          Brand terms
+          {{ t('filter.brandTerms') }}
           <input
             v-model="brandTerms"
             type="text"
@@ -900,33 +908,33 @@ watch(brandTerms, terms => {
             :class="{ active: querySegment === segment }"
             @click="querySegment = segment"
           >
-            {{ segment }}
+            {{ tv(segment) }}
           </button>
         </div>
       </section>
 
       <div v-if="!workspaceDataReady" class="empty">
-        No GSC workspace data is loaded yet. Click Load Data, or keep a saved snapshot available so the dashboard can restore it automatically.
+        {{ t('empty.workspace') }}
       </div>
 
       <section class="workspace">
         <section>
           <Panel
-            :title="pageTypeFilter === 'All' ? 'Performance Trend' : `${pageTypeFilter} Performance Trend`"
+            :title="pageTypeFilter === 'All' ? t('trend.performance') : t('trend.performanceTyped', '', {type: tv(pageTypeFilter)})"
             :icon="TrendingUp"
-            :meta="`${performanceTrendRows.length} points`"
+            :meta="t('meta.points', '', {count: performanceTrendRows.length})"
           >
             <TrendChart :key="`${themeMode}:${performanceTrendKey}`" :rows="performanceTrendRows" :theme-mode="themeMode" />
             <div v-if="pageTypeFilter !== 'All' && pageTypeTrendLoading" class="empty">
-              Fetching daily {{ pageTypeFilter }} trend data from GSC...
+              {{ t('trend.fetchingDaily', '', {type: tv(pageTypeFilter)}) }}
             </div>
             <div v-else-if="pageTypeFilter !== 'All' && performanceTrendRows.length === 0" class="empty">
-              No daily {{ pageTypeFilter }} trend data yet. Click Load Data, or keep this filter selected to fetch date + page level GSC rows.
+              {{ t('trend.noDaily', '', {type: tv(pageTypeFilter)}) }}
             </div>
           </Panel>
 
           <div class="tables">
-            <Panel title="SEO Action Board" :icon="Sparkles" :meta="`${seoActionRows.length} prioritized actions`">
+            <Panel :title="t('panel.seoActionBoard')" :icon="Sparkles" :meta="t('meta.actions', '', {count: seoActionRows.length})">
               <DataTable
                 :rows="seoActionRows"
                 :columns="['Score', 'Priority', 'Action', 'Page', 'Type', 'Query', 'Segment', 'Impressions', 'CTR', 'Position', 'Reason']"
@@ -934,7 +942,7 @@ watch(brandTerms, terms => {
               />
             </Panel>
 
-            <Panel title="Quick Wins" :icon="Gauge" :meta="`${quickWinRows.length} high-upside rows`">
+            <Panel :title="t('panel.quickWins')" :icon="Gauge" :meta="t('meta.quickWins', '', {count: quickWinRows.length})">
               <DataTable
                 :rows="quickWinRows"
                 :columns="['Score', 'Priority', 'Page', 'Type', 'Query', 'Segment', 'Impressions', 'CTR', 'Expected', 'Position', 'Action']"
@@ -942,7 +950,7 @@ watch(brandTerms, terms => {
               />
             </Panel>
 
-            <Panel title="Content Refresh Planner" :icon="Files" :meta="`${contentRefreshRows.length} pages`">
+            <Panel :title="t('panel.contentRefresh')" :icon="Files" :meta="t('meta.pages', '', {count: contentRefreshRows.length})">
               <DataTable
                 :rows="contentRefreshRows"
                 :columns="['Score', 'Page', 'Type', 'Best Query', 'Queries', 'Low CTR Queries', 'Impressions', 'CTR', 'Position', 'Decay', 'Action']"
@@ -952,33 +960,33 @@ watch(brandTerms, terms => {
 
             <Panel
               v-if="pageTypeFilter !== 'All'"
-              :title="`${pageTypeFilter} Daily Trend Rows`"
+              :title="t('panel.dailyRows', '', {type: tv(pageTypeFilter)})"
               :icon="Funnel"
-              :meta="`${pageTypeDailyRows.length} days`"
+              :meta="t('meta.days', '', {count: pageTypeDailyRows.length})"
             >
               <DataTable :rows="pageTypeDailyRows" :columns="['Date', 'Type', 'Clicks', 'Impressions', 'CTR', 'Position', 'Pages']" />
             </Panel>
 
-            <Panel title="Page Type Summary" :icon="Funnel" :meta="`${pageTypeSummary.length} types`">
+            <Panel :title="t('panel.pageTypeSummary')" :icon="Funnel" :meta="t('meta.types', '', {count: pageTypeSummary.length})">
               <DataTable :rows="pageTypeSummary" :columns="['Type', 'Pages', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
 
-            <Panel title="Query Segment Summary" :icon="Search" :meta="`${querySegmentSummary.length} segments`">
+            <Panel :title="t('panel.querySegmentSummary')" :icon="Search" :meta="t('meta.segments', '', {count: querySegmentSummary.length})">
               <DataTable :rows="querySegmentSummary" :columns="['Segment', 'Queries', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
 
-            <Panel title="Top Pages" :icon="Files" :meta="`${topPages.length} rows`">
+            <Panel :title="t('panel.topPages')" :icon="Files" :meta="t('meta.rows', '', {count: topPages.length})">
               <DataTable :rows="topPages" :columns="['Page', 'Type', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
 
-            <Panel title="Top Queries" :icon="Search" :meta="`${topQueries.length} rows`">
+            <Panel :title="t('panel.topQueries')" :icon="Search" :meta="t('meta.rows', '', {count: topQueries.length})">
               <DataTable :rows="topQueries" :columns="['Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
           </div>
         </section>
 
         <aside class="side-stack">
-          <Panel title="Page Decay Monitor" :icon="TrendingUp" :meta="`${pageDecayRows.length} pages`">
+          <Panel :title="t('panel.pageDecay')" :icon="TrendingUp" :meta="t('meta.pages', '', {count: pageDecayRows.length})">
             <DataTable
               :rows="pageDecayRows"
               :columns="['Page', 'Type', 'Severity', 'Clicks Lost', 'Impr. Lost', 'Click Δ', 'Position Δ', 'Action']"
@@ -986,7 +994,7 @@ watch(brandTerms, terms => {
             />
           </Panel>
 
-          <Panel title="Keyword Cannibalization" :icon="Funnel" :meta="`${cannibalizationRows.length} queries`">
+          <Panel :title="t('panel.cannibalization')" :icon="Funnel" :meta="t('meta.queries', '', {count: cannibalizationRows.length})">
             <DataTable
               :rows="cannibalizationRows"
               :columns="['Query', 'Segment', 'Pages', 'Clicks', 'Impressions', 'Top Share', 'Top Page', 'Competing Pages', 'Action']"
@@ -994,11 +1002,11 @@ watch(brandTerms, terms => {
             />
           </Panel>
 
-          <Panel title="Low CTR Opportunities" :icon="Gauge" :meta="`${lowCtrRows.length} rows`">
+          <Panel :title="t('panel.lowCtr')" :icon="Gauge" :meta="t('meta.rows', '', {count: lowCtrRows.length})">
             <DataTable :rows="lowCtrRows" :columns="['Page', 'Type', 'Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
 
-          <Panel title="Keyword Opportunities" :icon="Sparkles" :meta="`${keywordRows.length} rows`">
+          <Panel :title="t('panel.keywordOpportunities')" :icon="Sparkles" :meta="t('meta.rows', '', {count: keywordRows.length})">
             <DataTable :rows="keywordRows" :columns="['Page', 'Type', 'Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
         </aside>
@@ -1014,14 +1022,14 @@ watch(brandTerms, terms => {
 
     <FutureModule
       v-else-if="activeView === 'ga'"
-      title="GA4 Analytics Hub"
-      eyebrow="Next data source"
-      description="This area is reserved for Google Analytics traffic, events, engagement, and conversion data. It is ready to become the GA side of the GSC + GA combined workflow."
+      :title="t('ga.title')"
+      :eyebrow="t('ga.eyebrow')"
+      :description="t('ga.description')"
       :icon="BarChart3"
       :bullets="[
-        { title: 'Traffic quality', text: 'Sessions, engagement rate, source / medium, landing pages.' },
-        { title: 'Conversion context', text: 'Events, key events, revenue, and page-level outcomes.' },
-        { title: 'GSC linkage', text: 'Blend rankings and queries with behavior after the click.' }
+        { title: t('ga.traffic'), text: t('ga.trafficText') },
+        { title: t('ga.conversion'), text: t('ga.conversionText') },
+        { title: t('ga.linkage'), text: t('ga.linkageText') }
       ]"
     />
 
@@ -1038,14 +1046,14 @@ watch(brandTerms, terms => {
 
     <FutureModule
       v-else
-      title="AI Analysis Workspace"
-      eyebrow="Local-first intelligence"
-      description="Saved snapshots will give AI a stable historical memory: compare periods, summarize anomalies, find SEO opportunities, and explain changes across GSC and GA."
+      :title="t('ai.title')"
+      :eyebrow="t('ai.eyebrow')"
+      :description="t('ai.description')"
       :icon="BrainCircuit"
       :bullets="[
-        { title: 'Historical memory', text: 'AI can inspect saved local JSON instead of only today’s API response.' },
-        { title: 'Cross-source insight', text: 'Future GA data can explain whether clicks turned into engaged visits.' },
-        { title: 'Action plans', text: 'Generate content, CTR, technical, and conversion recommendations from real data.' }
+        { title: t('ai.memory'), text: t('ai.memoryText') },
+        { title: t('ai.crossSource'), text: t('ai.crossSourceText') },
+        { title: t('ai.actions'), text: t('ai.actionsText') }
       ]"
     />
   </main>

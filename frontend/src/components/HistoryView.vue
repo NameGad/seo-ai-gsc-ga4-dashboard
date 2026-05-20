@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { Database, FileJson, RefreshCw, TrendingUp } from '@lucide/vue';
 import HistoryTrendChart from './HistoryTrendChart.vue';
 import Panel from './Panel.vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({
   snapshots: {
@@ -32,6 +33,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['refresh']);
+const {t, tv} = useI18n();
 
 const trendGroups = computed(() => {
   const groups = new Map();
@@ -83,10 +85,10 @@ function formatDate(value) {
 function metricLine(snapshot) {
   const metrics = snapshot.metrics || {};
   return [
-    metrics.clicks ? `${metrics.clicks} clicks` : null,
-    metrics.impressions ? `${metrics.impressions} impressions` : null,
+    metrics.clicks ? t('history.metricClicks', '{value} clicks', {value: metrics.clicks}) : null,
+    metrics.impressions ? t('history.metricImpressions', '{value} impressions', {value: metrics.impressions}) : null,
     metrics.ctr ? `${metrics.ctr} CTR` : null
-  ].filter(Boolean).join(' · ') || 'Metrics pending';
+  ].filter(Boolean).join(' · ') || t('history.metricsPending', 'Metrics pending');
 }
 
 function formatNumber(value) {
@@ -118,29 +120,29 @@ function deltaClass(value, invert = false) {
 
 <template>
   <section class="history-layout">
-    <Panel title="GSC Historical Trend" :icon="TrendingUp" :meta="`${trendRows.length} unique snapshots`">
-      <div v-if="trendGroups.length === 0" class="empty">No trend snapshots yet</div>
+    <Panel :title="t('history.gscTrend')" :icon="TrendingUp" :meta="t('history.uniqueSnapshots', '', {count: trendRows.length})">
+      <div v-if="trendGroups.length === 0" class="empty">{{ t('history.noTrend') }}</div>
       <template v-else>
         <div v-for="group in trendGroups" :key="group.siteUrl" class="site-history-group">
           <div class="site-history-head">
             <strong>{{ group.siteUrl }}</strong>
-            <span>{{ group.rows.length }} unique snapshots · deltas are calculated inside this property only</span>
+            <span>{{ t('history.deltasInside', '', {count: group.rows.length}) }}</span>
           </div>
           <HistoryTrendChart :rows="group.rows" :theme-mode="themeMode" />
           <div class="history-trend-table">
             <table>
               <thead>
                 <tr>
-                  <th>Captured</th>
-                  <th>Period</th>
-                  <th>Clicks</th>
-                  <th>Δ Clicks</th>
-                  <th>Impressions</th>
-                  <th>Δ Impr.</th>
-                  <th>CTR</th>
-                  <th>Δ CTR</th>
-                  <th>Position</th>
-                  <th>Δ Pos.</th>
+                  <th>{{ t('col.Captured', 'Captured') }}</th>
+                  <th>{{ t('col.Period', 'Period') }}</th>
+                  <th>{{ t('col.Clicks', 'Clicks') }}</th>
+                  <th>{{ t('col.Δ Clicks', 'Δ Clicks') }}</th>
+                  <th>{{ t('col.Impressions', 'Impressions') }}</th>
+                  <th>{{ t('col.Δ Impr.', 'Δ Impr.') }}</th>
+                  <th>{{ t('col.CTR', 'CTR') }}</th>
+                  <th>{{ t('col.Δ CTR', 'Δ CTR') }}</th>
+                  <th>{{ t('col.Position', 'Position') }}</th>
+                  <th>{{ t('col.Δ Pos.', 'Δ Pos.') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,28 +165,28 @@ function deltaClass(value, invert = false) {
       </template>
     </Panel>
 
-    <Panel title="GSC Page Type Trend" :icon="TrendingUp" :meta="`${pageTypeRows.length} rows`">
-      <div v-if="pageTypeGroups.length === 0" class="empty">No page type trend data yet</div>
+    <Panel :title="t('history.pageTypeTrend')" :icon="TrendingUp" :meta="t('meta.rows', '', {count: pageTypeRows.length})">
+      <div v-if="pageTypeGroups.length === 0" class="empty">{{ t('history.noPageType') }}</div>
       <template v-else>
         <div v-for="group in pageTypeGroups" :key="group.key" class="site-history-group page-type-group">
           <div class="site-history-head">
-            <strong>{{ group.pageType }} · {{ group.siteUrl }}</strong>
-            <span>{{ group.rows.length }} snapshots · Collection / Product / Blog segmentation</span>
+            <strong>{{ tv(group.pageType) }} · {{ group.siteUrl }}</strong>
+            <span>{{ t('history.pageTypeMeta', '', {count: group.rows.length}) }}</span>
           </div>
           <div class="history-trend-table">
             <table>
               <thead>
                 <tr>
-                  <th>Captured</th>
-                  <th>Period</th>
-                  <th>Clicks</th>
-                  <th>Δ Clicks</th>
-                  <th>Impressions</th>
-                  <th>Δ Impr.</th>
-                  <th>CTR</th>
-                  <th>Position</th>
-                  <th>Pages</th>
-                  <th>Queries</th>
+                  <th>{{ t('col.Captured', 'Captured') }}</th>
+                  <th>{{ t('col.Period', 'Period') }}</th>
+                  <th>{{ t('col.Clicks', 'Clicks') }}</th>
+                  <th>{{ t('col.Δ Clicks', 'Δ Clicks') }}</th>
+                  <th>{{ t('col.Impressions', 'Impressions') }}</th>
+                  <th>{{ t('col.Δ Impr.', 'Δ Impr.') }}</th>
+                  <th>{{ t('col.CTR', 'CTR') }}</th>
+                  <th>{{ t('col.Position', 'Position') }}</th>
+                  <th>{{ t('col.Pages', 'Pages') }}</th>
+                  <th>{{ t('col.Queries', 'Queries') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,37 +209,37 @@ function deltaClass(value, invert = false) {
       </template>
     </Panel>
 
-    <Panel title="Local Data Vault" :icon="Database" :meta="`${snapshots.length} unique snapshots`">
+    <Panel :title="t('history.localVault')" :icon="Database" :meta="t('history.uniqueSnapshots', '', {count: snapshots.length})">
       <div v-if="dbStats" class="db-stats">
         <div>
           <strong>{{ dbStats.unique_snapshots || snapshots.length || 0 }}</strong>
-          <span>Unique snapshots</span>
+          <span>{{ t('history.unique') }}</span>
         </div>
         <div>
           <strong>{{ dbStats.sites || 0 }}</strong>
-          <span>Sites</span>
+          <span>{{ t('history.sites') }}</span>
         </div>
         <div>
           <strong>{{ dbStats.trend_rows || 0 }}</strong>
-          <span>Daily rows</span>
+          <span>{{ t('history.dailyRows') }}</span>
         </div>
         <div>
           <strong>{{ dbStats.page_type_rows || 0 }}</strong>
-          <span>Page type rows</span>
+          <span>{{ t('history.pageTypeRows') }}</span>
         </div>
       </div>
       <div class="history-toolbar">
         <div>
-          <strong>Saved on this computer</strong>
-          <span>Each successful GSC load is stored as JSON for future review and AI analysis.</span>
+          <strong>{{ t('history.savedLocal') }}</strong>
+          <span>{{ t('history.savedLocalText') }}</span>
         </div>
         <button type="button" :disabled="busy" @click="emit('refresh')">
           <RefreshCw :class="{ spinning: busy }" />
-          <span>Refresh</span>
+          <span>{{ t('history.refresh') }}</span>
         </button>
       </div>
       <div class="snapshot-list">
-        <div v-if="snapshots.length === 0" class="empty">No saved snapshots yet</div>
+        <div v-if="snapshots.length === 0" class="empty">{{ t('history.noSaved') }}</div>
         <article v-for="snapshot in snapshots" :key="snapshot.id" class="snapshot-item">
           <div class="snapshot-icon"><FileJson /></div>
           <div>

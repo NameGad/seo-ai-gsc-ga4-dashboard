@@ -1,5 +1,6 @@
 <script setup>
 import { BarChart3, BrainCircuit, Database, LineChart, Radar } from '@lucide/vue';
+import { useI18n } from '../i18n';
 
 defineProps({
   active: {
@@ -13,13 +14,14 @@ defineProps({
 });
 
 const emit = defineEmits(['change']);
+const {t} = useI18n();
 
 const items = [
-  { key: 'gsc', label: 'GSC', note: 'Search performance', icon: LineChart },
-  { key: 'insights', label: 'Insights', note: 'Deep SEO analysis', icon: Radar },
-  { key: 'ga', label: 'GA4', note: 'Traffic and events', icon: BarChart3 },
-  { key: 'history', label: 'History', note: 'Local snapshots', icon: Database },
-  { key: 'ai', label: 'AI', note: 'Analysis ready', icon: BrainCircuit }
+  { key: 'gsc', labelKey: 'nav.gsc', noteKey: 'nav.gscNote', icon: LineChart },
+  { key: 'insights', labelKey: 'nav.insights', noteKey: 'nav.insightsNote', icon: Radar },
+  { key: 'ga', labelKey: 'nav.ga', noteKey: 'nav.gaNote', icon: BarChart3 },
+  { key: 'history', labelKey: 'nav.history', noteKey: 'nav.historyNote', icon: Database },
+  { key: 'ai', labelKey: 'nav.ai', noteKey: 'nav.aiNote', icon: BrainCircuit }
 ];
 </script>
 
@@ -35,8 +37,8 @@ const items = [
     >
       <component :is="item.icon" />
       <span>
-        <strong>{{ item.label }}</strong>
-        <small>{{ item.key === 'history' && snapshotCount ? `${snapshotCount} snapshots` : item.note }}</small>
+        <strong>{{ t(item.labelKey) }}</strong>
+        <small>{{ item.key === 'history' && snapshotCount ? t('nav.snapshots', '', {count: snapshotCount}) : t(item.noteKey) }}</small>
       </span>
     </button>
   </nav>

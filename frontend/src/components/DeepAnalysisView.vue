@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { Activity, AlertTriangle, Gauge, Globe2, MinusCircle, PlusCircle, RefreshCw, Split, Tags } from '@lucide/vue';
 import DataTable from './DataTable.vue';
 import Panel from './Panel.vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({
   analysis: {
@@ -16,14 +17,15 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['refresh']);
+const {t} = useI18n();
 
 const summaryCards = computed(() => {
   const summary = props.analysis?.summary || {};
   return [
-    { label: 'Declining pages', value: formatNumber(summary.pageDecayCount), sub: `${formatNumber(summary.clickLoss)} lost clicks`, accent: '#be123c' },
-    { label: 'Low CTR upside', value: formatNumber(summary.lowCtrOpportunityCount), sub: `${formatNumber(summary.potentialClicks)} potential clicks`, accent: '#2563eb' },
-    { label: 'Cannibalized queries', value: formatNumber(summary.cannibalizationCount), sub: 'multi-page competition', accent: '#7c3aed' },
-    { label: 'Keyword movement', value: `${formatNumber(summary.newKeywordCount)} / ${formatNumber(summary.lostKeywordCount)}`, sub: 'new / lost queries', accent: '#0f766e' }
+    { label: t('summary.decliningPages', 'Declining pages'), value: formatNumber(summary.pageDecayCount), sub: t('summary.lostClicks', '{count} lost clicks', {count: formatNumber(summary.clickLoss)}), accent: '#be123c' },
+    { label: t('summary.lowCtrUpside', 'Low CTR upside'), value: formatNumber(summary.lowCtrOpportunityCount), sub: t('summary.potentialClicks', '{count} potential clicks', {count: formatNumber(summary.potentialClicks)}), accent: '#2563eb' },
+    { label: t('summary.cannibalizedQueries', 'Cannibalized queries'), value: formatNumber(summary.cannibalizationCount), sub: t('summary.multiPageCompetition', 'multi-page competition'), accent: '#7c3aed' },
+    { label: t('summary.keywordMovement', 'Keyword movement'), value: `${formatNumber(summary.newKeywordCount)} / ${formatNumber(summary.lostKeywordCount)}`, sub: t('summary.newLostQueries', 'new / lost queries'), accent: '#0f766e' }
   ];
 });
 
@@ -81,7 +83,7 @@ const dimensionRows = computed(() => {
 
 const latestLabel = computed(() => {
   const snapshot = props.analysis?.meta?.latestSnapshot;
-  if (!snapshot) return 'No local GSC snapshot yet';
+  if (!snapshot) return t('insights.latestMissing');
   const period = snapshot.dateRange?.startDate && snapshot.dateRange?.endDate
     ? `${snapshot.dateRange.startDate} to ${snapshot.dateRange.endDate}`
     : 'saved period';
@@ -134,15 +136,15 @@ function formatSigned(value, digits = 0) {
 
 <template>
   <section class="analysis-layout">
-    <Panel title="GSC Deep Analysis" :icon="Activity" :meta="latestLabel">
+    <Panel :title="t('insights.title')" :icon="Activity" :meta="latestLabel">
       <div class="analysis-toolbar">
         <div>
-          <strong>{{ analysis?.meta?.hasComparison ? 'Historical comparison ready' : 'Latest snapshot analysis' }}</strong>
-          <span>Built from local GSC snapshots so the same data can be reused for future AI analysis.</span>
+          <strong>{{ analysis?.meta?.hasComparison ? t('insights.historicalReady') : t('insights.latestAnalysis') }}</strong>
+          <span>{{ t('insights.snapshotReuse') }}</span>
         </div>
         <button type="button" :disabled="busy" @click="emit('refresh')">
           <RefreshCw :class="{ spinning: busy }" />
-          <span>Refresh</span>
+          <span>{{ t('history.refresh') }}</span>
         </button>
       </div>
 
@@ -154,25 +156,25 @@ function formatSigned(value, digits = 0) {
         </article>
       </div>
 
-      <div v-if="!analysis?.meta?.latestSnapshot" class="empty">Load and save GSC data first, then this workspace will show deep SEO diagnostics.</div>
+      <div v-if="!analysis?.meta?.latestSnapshot" class="empty">{{ t('insights.empty') }}</div>
     </Panel>
 
     <section v-if="analysis?.meta?.latestSnapshot" class="analysis-grid">
-      <Panel title="Page Decay Monitor" :icon="AlertTriangle" :meta="`${pageDecayRows.length} pages`">
+      <Panel :title="t('insights.decay')" :icon="AlertTriangle" :meta="t('meta.pages', '', {count: pageDecayRows.length})">
         <DataTable :rows="pageDecayRows" :columns="['Page', 'Severity', 'Click Loss', 'Click Δ%', 'Impr. Loss', 'Pos Δ', 'Current']" />
       </Panel>
 
-      <Panel title="Keyword Ranking Volatility" :icon="Activity" :meta="`${volatilityRows.length} queries`">
+      <Panel :title="t('insights.volatility')" :icon="Activity" :meta="t('meta.queries', '', {count: volatilityRows.length})">
         <DataTable :rows="volatilityRows" :columns="['Query', 'Intent', 'Move', 'Pos Δ', 'Click Δ', 'Impr. Δ', 'Position']" />
       </Panel>
 
-      <Panel title="Low CTR Opportunities" :icon="Gauge" :meta="`${lowCtrRows.length} opportunities`">
+      <Panel :title="t('panel.lowCtr')" :icon="Gauge" :meta="t('meta.opportunities', '{count} opportunities', {count: lowCtrRows.length})">
         <DataTable :rows="lowCtrRows" :columns="['Page', 'Query', 'Intent', 'Impressions', 'CTR', 'Expected', 'Gap', 'Potential Clicks', 'Position']" />
       </Panel>
 
-      <Panel title="Cannibalization Watch" :icon="Split" :meta="`${analysis.cannibalization.length} queries`">
+      <Panel :title="t('insights.cannibalization')" :icon="Split" :meta="t('meta.queries', '', {count: analysis.cannibalization.length})">
         <div class="cannibal-list">
-          <div v-if="analysis.cannibalization.length === 0" class="empty">No cannibalization risk found in the latest snapshot.</div>
+          <div v-if="analysis.cannibalization.length === 0" class="empty">{{ t('insights.noCannibal') }}</div>
           <article v-for="item in analysis.cannibalization" :key="item.query" class="cannibal-item">
             <header>
               <div>
@@ -191,19 +193,19 @@ function formatSigned(value, digits = 0) {
         </div>
       </Panel>
 
-      <Panel title="Query Intent Mix" :icon="Tags" :meta="`${intentRows.length} intents`">
+      <Panel :title="t('insights.intentMix')" :icon="Tags" :meta="t('meta.intents', '{count} intents', {count: intentRows.length})">
         <DataTable :rows="intentRows" :columns="['Intent', 'Queries', 'Clicks', 'Impressions']" />
       </Panel>
 
-      <Panel title="New Keywords" :icon="PlusCircle" :meta="`${newKeywordRows.length} queries`">
+      <Panel :title="t('insights.newKeywords')" :icon="PlusCircle" :meta="t('meta.queries', '', {count: newKeywordRows.length})">
         <DataTable :rows="newKeywordRows" :columns="['Query', 'Intent', 'Clicks', 'Impressions', 'CTR', 'Position']" />
       </Panel>
 
-      <Panel title="Lost Keywords" :icon="MinusCircle" :meta="`${lostKeywordRows.length} queries`">
+      <Panel :title="t('insights.lostKeywords')" :icon="MinusCircle" :meta="t('meta.queries', '', {count: lostKeywordRows.length})">
         <DataTable :rows="lostKeywordRows" :columns="['Query', 'Intent', 'Clicks', 'Impressions', 'CTR', 'Position']" />
       </Panel>
 
-      <Panel title="Country, Device and Search Type" :icon="Globe2" :meta="`${dimensionRows.length} rows`">
+      <Panel :title="t('insights.dimensions')" :icon="Globe2" :meta="t('meta.rows', '', {count: dimensionRows.length})">
         <DataTable :rows="dimensionRows" :columns="['Type', 'Value', 'Search Type', 'Clicks', 'Impressions', 'CTR', 'Position']" />
       </Panel>
     </section>

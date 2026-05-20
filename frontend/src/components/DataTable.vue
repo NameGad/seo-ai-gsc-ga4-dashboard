@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Maximize2, Minimize2 } from '@lucide/vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({
   rows: {
@@ -18,6 +19,7 @@ const props = defineProps({
 });
 
 const expanded = ref(false);
+const {t, tv} = useI18n();
 const longTextColumns = new Set([
   'Page',
   'Top Page',
@@ -42,7 +44,7 @@ function cellClass(column) {
 }
 
 function displayValue(value) {
-  return value == null ? '' : String(value);
+  return value == null ? '' : tv(value);
 }
 </script>
 
@@ -52,15 +54,15 @@ function displayValue(value) {
       <button type="button" class="table-expand" @click="expanded = !expanded">
         <Minimize2 v-if="expanded" />
         <Maximize2 v-else />
-        <span>{{ expanded ? 'Compact' : 'Expand' }}</span>
+        <span>{{ expanded ? t('table.compact') : t('table.expand') }}</span>
       </button>
     </div>
-    <div v-if="rows.length === 0" class="empty">No data</div>
+    <div v-if="rows.length === 0" class="empty">{{ t('table.noData') }}</div>
     <div v-else class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th v-for="column in columns" :key="column">{{ column }}</th>
+            <th v-for="column in columns" :key="column">{{ t(`col.${column}`, column) }}</th>
           </tr>
         </thead>
         <tbody>

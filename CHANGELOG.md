@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.11 - 2026-05-20
+
+- Added a persistent language switcher for English and Chinese.
+- Added a lightweight frontend i18n layer for navigation, controls, GSC panels, History, Insights, GA4, AI, chart labels, table headers, and common table values.
+- Added localized status messages, alerts, and table actions.
+
 ## 1.3.10 - 2026-05-20
 
 - Improved SEO data tables so long URLs, queries, reasons, and actions no longer stretch the dashboard layout.

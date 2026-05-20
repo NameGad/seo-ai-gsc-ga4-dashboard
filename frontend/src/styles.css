@@ -214,6 +214,30 @@ button svg{width:17px;height:17px;stroke-width:2}
   backdrop-filter:blur(14px);
 }
 .theme-toggle span{font-size:13px;font-weight:680}
+.language-toggle{
+  min-height:36px;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:0 10px;
+  background:var(--surface-gradient);
+  color:var(--ink);
+  backdrop-filter:blur(14px);
+}
+.language-toggle svg{width:16px;height:16px;color:var(--blue);flex:0 0 auto}
+.language-toggle select{
+  width:auto;
+  min-height:30px;
+  border:0;
+  padding:0 18px 0 0;
+  background:transparent;
+  font-size:13px;
+  font-weight:680;
+  color:var(--ink);
+  box-shadow:none;
+}
 .brand{display:flex;align-items:center;gap:12px;min-width:0}
 .brand-mark{
   width:42px;height:42px;border-radius:8px;

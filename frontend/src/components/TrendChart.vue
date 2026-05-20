@@ -1,6 +1,7 @@
 <script setup>
 import { Chart, Filler, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip, CategoryScale } from 'chart.js';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from '../i18n';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler);
 
@@ -16,6 +17,7 @@ const props = defineProps({
 });
 
 const canvasRef = ref(null);
+const {locale, t} = useI18n();
 let chart;
 
 const rowsSignature = computed(() => props.rows.map(row => [
@@ -46,7 +48,7 @@ function render() {
       labels: props.rows.map(row => row.date),
       datasets: [
         {
-          label: 'Clicks',
+          label: t('chart.clicks'),
           data: props.rows.map(row => row.clicks || 0),
           borderColor: clickColor,
           backgroundColor: clickFill,
@@ -58,7 +60,7 @@ function render() {
           yAxisID: 'y'
         },
         {
-          label: 'Impressions',
+          label: t('chart.impressions'),
           data: props.rows.map(row => row.impressions || 0),
           borderColor: impressionColor,
           backgroundColor: impressionFill,
@@ -91,6 +93,7 @@ function render() {
 onMounted(render);
 watch(rowsSignature, render);
 watch(() => props.themeMode, render);
+watch(locale, render);
 onBeforeUnmount(() => {
   if (chart) chart.destroy();
 });

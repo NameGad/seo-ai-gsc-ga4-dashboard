@@ -1,6 +1,7 @@
 <script setup>
 import { Chart, BarController, BarElement, CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip } from 'chart.js';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from '../i18n';
 
 Chart.register(BarController, BarElement, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend);
 
@@ -16,6 +17,7 @@ const props = defineProps({
 });
 
 const canvasRef = ref(null);
+const {locale, t} = useI18n();
 let chart;
 
 function labelFor(row) {
@@ -47,7 +49,7 @@ function render() {
       datasets: [
         {
           type: 'bar',
-          label: 'Clicks',
+          label: t('chart.clicks'),
           data: props.rows.map(row => row.clicks || 0),
           backgroundColor: clickFill,
           borderColor: clickColor,
@@ -57,7 +59,7 @@ function render() {
         },
         {
           type: 'line',
-          label: 'Impressions',
+          label: t('chart.impressions'),
           data: props.rows.map(row => row.impressions || 0),
           borderColor: impressionColor,
           backgroundColor: impressionFill,
@@ -89,6 +91,7 @@ function render() {
 onMounted(render);
 watch(() => props.rows, render, {deep: true});
 watch(() => props.themeMode, render);
+watch(locale, render);
 onBeforeUnmount(() => {
   if (chart) chart.destroy();
 });

@@ -1,5 +1,6 @@
 <script setup>
 import { KeyRound, ListTree, RefreshCw } from '@lucide/vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({
   modelValue: {
@@ -17,6 +18,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:modelValue', 'auth', 'load-sites', 'load-data']);
+const {t} = useI18n();
 
 function patch(values) {
   emit('update:modelValue', {
@@ -37,7 +39,7 @@ function selectSite(event) {
 <template>
   <section class="toolbar" aria-label="Controls">
     <label>
-      Site URL
+      {{ t('control.siteUrl') }}
       <input
         :value="modelValue.siteUrl"
         type="text"
@@ -48,9 +50,9 @@ function selectSite(event) {
     </label>
 
     <label>
-      GSC Property
+      {{ t('control.property') }}
       <select :value="modelValue.selectedSite" @change="selectSite">
-        <option value="">Manual input</option>
+        <option value="">{{ t('control.manual') }}</option>
         <option v-for="site in sites" :key="site.siteUrl" :value="site.siteUrl">
           {{ site.siteUrl }} ({{ site.permissionLevel }})
         </option>
@@ -58,26 +60,26 @@ function selectSite(event) {
     </label>
 
     <label>
-      Start Date
+      {{ t('control.startDate') }}
       <input :value="modelValue.startDate" type="date" @input="patch({ startDate: $event.target.value })">
     </label>
 
     <label>
-      End Date
+      {{ t('control.endDate') }}
       <input :value="modelValue.endDate" type="date" @input="patch({ endDate: $event.target.value })">
     </label>
 
     <button type="button" title="Google Auth" @click="emit('auth')">
       <KeyRound />
-      <span>Auth</span>
+      <span>{{ t('control.auth') }}</span>
     </button>
     <button type="button" title="Load Sites" :disabled="busy" @click="emit('load-sites')">
       <ListTree />
-      <span>Sites</span>
+      <span>{{ t('control.sites') }}</span>
     </button>
     <button type="button" class="primary" title="Load Data" :disabled="busy" @click="emit('load-data')">
       <RefreshCw :class="{ spinning: busy }" />
-      <span>{{ busy ? 'Loading' : 'Load' }}</span>
+      <span>{{ busy ? t('control.loading') : t('control.load') }}</span>
     </button>
   </section>
 </template>
