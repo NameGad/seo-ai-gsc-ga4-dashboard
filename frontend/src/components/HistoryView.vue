@@ -24,6 +24,10 @@ const props = defineProps({
   busy: {
     type: Boolean,
     default: false
+  },
+  themeMode: {
+    type: String,
+    default: 'light'
   }
 });
 
@@ -122,7 +126,7 @@ function deltaClass(value, invert = false) {
             <strong>{{ group.siteUrl }}</strong>
             <span>{{ group.rows.length }} unique snapshots · deltas are calculated inside this property only</span>
           </div>
-          <HistoryTrendChart :rows="group.rows" />
+          <HistoryTrendChart :rows="group.rows" :theme-mode="themeMode" />
           <div class="history-trend-table">
             <table>
               <thead>

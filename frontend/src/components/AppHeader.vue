@@ -1,5 +1,5 @@
 <script setup>
-import { Activity, CircleAlert, CircleCheck, LineChart } from '@lucide/vue';
+import { Activity, CircleAlert, CircleCheck, LineChart, Moon, Sun } from '@lucide/vue';
 
 const props = defineProps({
   activeProperty: {
@@ -9,8 +9,14 @@ const props = defineProps({
   status: {
     type: Object,
     required: true
+  },
+  themeMode: {
+    type: String,
+    default: 'light'
   }
 });
+
+const emit = defineEmits(['toggle-theme']);
 
 const iconMap = {
   default: Activity,
@@ -31,9 +37,23 @@ const iconMap = {
       </div>
     </div>
 
-    <div class="status" :class="props.status.type">
-      <component :is="iconMap[props.status.type] || iconMap.default" />
-      <span>{{ props.status.message }}</span>
+    <div class="topbar-actions">
+      <button
+        class="theme-toggle"
+        type="button"
+        :aria-label="props.themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="props.themeMode === 'dark' ? 'Light mode' : 'Dark mode'"
+        @click="emit('toggle-theme')"
+      >
+        <Sun v-if="props.themeMode === 'dark'" />
+        <Moon v-else />
+        <span>{{ props.themeMode === 'dark' ? 'Light' : 'Dark' }}</span>
+      </button>
+
+      <div class="status" :class="props.status.type">
+        <component :is="iconMap[props.status.type] || iconMap.default" />
+        <span>{{ props.status.message }}</span>
+      </div>
     </div>
   </header>
 </template>

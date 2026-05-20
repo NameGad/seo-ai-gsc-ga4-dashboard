@@ -8,6 +8,10 @@ const props = defineProps({
   rows: {
     type: Array,
     default: () => []
+  },
+  themeMode: {
+    type: String,
+    default: 'light'
   }
 });
 
@@ -22,9 +26,20 @@ function labelFor(row) {
     : date.toLocaleString(undefined, {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
 
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
 function render() {
   if (!canvasRef.value) return;
   if (chart) chart.destroy();
+  const axisColor = cssVar('--chart-axis', '#667085');
+  const gridColor = cssVar('--chart-grid', '#edf1f4');
+  const tooltipBg = cssVar('--chart-tooltip', '#111827');
+  const clickColor = cssVar('--chart-click', '#2563eb');
+  const clickFill = cssVar('--chart-click-fill', 'rgba(37,99,235,.20)');
+  const impressionColor = cssVar('--chart-impression', '#0f766e');
+  const impressionFill = cssVar('--chart-impression-fill', 'rgba(15,118,110,.08)');
 
   chart = new Chart(canvasRef.value.getContext('2d'), {
     data: {
@@ -34,8 +49,8 @@ function render() {
           type: 'bar',
           label: 'Clicks',
           data: props.rows.map(row => row.clicks || 0),
-          backgroundColor: 'rgba(37,99,235,.20)',
-          borderColor: '#2563eb',
+          backgroundColor: clickFill,
+          borderColor: clickColor,
           borderWidth: 1,
           borderRadius: 5,
           yAxisID: 'y'
@@ -44,8 +59,8 @@ function render() {
           type: 'line',
           label: 'Impressions',
           data: props.rows.map(row => row.impressions || 0),
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,.08)',
+          borderColor: impressionColor,
+          backgroundColor: impressionFill,
           tension: .35,
           borderWidth: 2,
           pointRadius: 3,
@@ -59,13 +74,13 @@ function render() {
       maintainAspectRatio: false,
       interaction: {mode: 'index', intersect: false},
       plugins: {
-        legend: {position: 'top', align: 'end', labels: {usePointStyle: true, boxWidth: 8, boxHeight: 8}},
-        tooltip: {backgroundColor: '#111827', padding: 12, cornerRadius: 8}
+        legend: {position: 'top', align: 'end', labels: {color: axisColor, usePointStyle: true, boxWidth: 8, boxHeight: 8}},
+        tooltip: {backgroundColor: tooltipBg, padding: 12, cornerRadius: 8}
       },
       scales: {
-        x: {grid: {display: false}, ticks: {color: '#667085'}},
-        y: {beginAtZero: true, grid: {color: '#edf1f4'}, ticks: {color: '#667085'}},
-        y1: {beginAtZero: true, position: 'right', grid: {drawOnChartArea: false}, ticks: {color: '#667085'}}
+        x: {grid: {display: false}, ticks: {color: axisColor}},
+        y: {beginAtZero: true, grid: {color: gridColor}, ticks: {color: axisColor}},
+        y1: {beginAtZero: true, position: 'right', grid: {drawOnChartArea: false}, ticks: {color: axisColor}}
       }
     }
   });
@@ -73,6 +88,7 @@ function render() {
 
 onMounted(render);
 watch(() => props.rows, render, {deep: true});
+watch(() => props.themeMode, render);
 onBeforeUnmount(() => {
   if (chart) chart.destroy();
 });

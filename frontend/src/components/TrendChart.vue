@@ -8,6 +8,10 @@ const props = defineProps({
   rows: {
     type: Array,
     default: () => []
+  },
+  themeMode: {
+    type: String,
+    default: 'light'
   }
 });
 
@@ -21,9 +25,20 @@ const rowsSignature = computed(() => props.rows.map(row => [
   Number(row.position || 0).toFixed(4)
 ].join(':')).join('|'));
 
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
 function render() {
   if (!canvasRef.value) return;
   if (chart) chart.destroy();
+  const axisColor = cssVar('--chart-axis', '#667085');
+  const gridColor = cssVar('--chart-grid', '#edf1f4');
+  const tooltipBg = cssVar('--chart-tooltip', '#111827');
+  const clickColor = cssVar('--chart-click', '#2563eb');
+  const clickFill = cssVar('--chart-click-fill', 'rgba(37,99,235,.10)');
+  const impressionColor = cssVar('--chart-impression', '#0f766e');
+  const impressionFill = cssVar('--chart-impression-fill', 'rgba(15,118,110,.08)');
 
   chart = new Chart(canvasRef.value.getContext('2d'), {
     type: 'line',
@@ -33,8 +48,8 @@ function render() {
         {
           label: 'Clicks',
           data: props.rows.map(row => row.clicks || 0),
-          borderColor: '#2563eb',
-          backgroundColor: 'rgba(37,99,235,.10)',
+          borderColor: clickColor,
+          backgroundColor: clickFill,
           tension: .35,
           borderWidth: 2,
           pointRadius: 0,
@@ -45,8 +60,8 @@ function render() {
         {
           label: 'Impressions',
           data: props.rows.map(row => row.impressions || 0),
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,.08)',
+          borderColor: impressionColor,
+          backgroundColor: impressionFill,
           tension: .35,
           borderWidth: 2,
           pointRadius: 0,
@@ -61,13 +76,13 @@ function render() {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
-        tooltip: { backgroundColor: '#111827', padding: 12, cornerRadius: 8, displayColors: true }
+        legend: { position: 'top', align: 'end', labels: { color: axisColor, usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+        tooltip: { backgroundColor: tooltipBg, padding: 12, cornerRadius: 8, displayColors: true }
       },
       scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 0, color: '#667085' } },
-        y: { beginAtZero: true, grid: { color: '#edf1f4' }, ticks: { color: '#667085' } },
-        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#667085' } }
+        x: { grid: { display: false }, ticks: { maxRotation: 0, color: axisColor } },
+        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: axisColor } },
+        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: axisColor } }
       }
     }
   });
@@ -75,6 +90,7 @@ function render() {
 
 onMounted(render);
 watch(rowsSignature, render);
+watch(() => props.themeMode, render);
 onBeforeUnmount(() => {
   if (chart) chart.destroy();
 });

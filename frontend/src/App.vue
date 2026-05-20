@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { BarChart3, BrainCircuit, Files, Funnel, Gauge, Search, Sparkles, TrendingUp } from '@lucide/vue';
 import AppHeader from './components/AppHeader.vue';
 import ControlBar from './components/ControlBar.vue';
@@ -16,6 +16,9 @@ import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPc
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
 const dates = defaultDateRange();
+const savedTheme = localStorage.getItem('seo-dashboard:theme');
+const preferredTheme = savedTheme
+  || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
 const controls = reactive({
   siteUrl: savedSite,
@@ -29,6 +32,7 @@ const status = reactive({
   type: 'default'
 });
 
+const themeMode = ref(preferredTheme);
 const busy = ref(false);
 const activeView = ref('gsc');
 const sites = ref([]);
@@ -184,6 +188,10 @@ const keywordRows = computed(() => filteredPageQuery.value
 function setStatus(message, type = 'default') {
   status.message = message;
   status.type = type;
+}
+
+function toggleTheme() {
+  themeMode.value = themeMode.value === 'dark' ? 'light' : 'dark';
 }
 
 async function selectPageType(type) {
@@ -477,11 +485,22 @@ onMounted(() => {
   handleAuthReturn();
   loadSnapshots();
 });
+
+watch(themeMode, mode => {
+  document.documentElement.dataset.theme = mode;
+  document.documentElement.style.colorScheme = mode;
+  localStorage.setItem('seo-dashboard:theme', mode);
+}, {immediate: true});
 </script>
 
 <template>
   <main class="shell">
-    <AppHeader :active-property="activeProperty" :status="status" />
+    <AppHeader
+      :active-property="activeProperty"
+      :status="status"
+      :theme-mode="themeMode"
+      @toggle-theme="toggleTheme"
+    />
     <WorkspaceNav :active="activeView" :snapshot-count="snapshots.length" @change="activeView = $event" />
 
     <template v-if="activeView === 'gsc'">
@@ -532,7 +551,7 @@ onMounted(() => {
             :icon="TrendingUp"
             :meta="`${performanceTrendRows.length} points`"
           >
-            <TrendChart :key="performanceTrendKey" :rows="performanceTrendRows" />
+            <TrendChart :key="`${themeMode}:${performanceTrendKey}`" :rows="performanceTrendRows" :theme-mode="themeMode" />
             <div v-if="pageTypeFilter !== 'All' && pageTypeTrendLoading" class="empty">
               Fetching daily {{ pageTypeFilter }} trend data from GSC...
             </div>
@@ -604,6 +623,7 @@ onMounted(() => {
       :page-type-rows="pageTypeTrendRows"
       :db-stats="historyStats"
       :busy="busy"
+      :theme-mode="themeMode"
       @refresh="loadSnapshots"
     />
 

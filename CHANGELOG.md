@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.6 - 2026-05-20
+
+- Added a persistent Light/Dark mode switch in the dashboard header.
+- Added dark theme tokens for the app shell, cards, tables, filters, status badges, and future modules.
+- Updated GSC and History charts so axis, grid, tooltip, and series colors follow the selected theme.
+
 ## 1.3.5 - 2026-05-20
 
 - Improved API error handling so HTML 404 responses from stale local servers no longer appear raw in the UI.

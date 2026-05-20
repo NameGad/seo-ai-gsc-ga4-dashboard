@@ -26,6 +26,7 @@ npm start
 
 数据工作台说明：
 
+- 页面右上角支持 `Light / Dark` 模式切换，选择会保存在当前浏览器本地，刷新后自动沿用。
 - `GSC`：当前可用的 Search Console 数据工作台。
 - `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Performance Trend、KPI 卡片、Top Pages、Top Queries、低 CTR 机会和关键词机会。
 - `Insights`：GSC 深度分析工作区，基于本地历史快照识别页面衰退、关键词波动、低 CTR 机会、关键词内耗、搜索意图和新增/流失关键词。
