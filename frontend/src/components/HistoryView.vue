@@ -13,6 +13,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  pageTypeRows: {
+    type: Array,
+    default: () => []
+  },
   dbStats: {
     type: Object,
     default: null
@@ -39,6 +43,32 @@ const trendGroups = computed(() => {
       rows: rows.slice().sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
     }))
     .sort((a, b) => a.siteUrl.localeCompare(b.siteUrl));
+});
+
+const pageTypeGroups = computed(() => {
+  const groups = new Map();
+  props.pageTypeRows.forEach(row => {
+    const key = `${row.siteUrl}::${row.pageType}`;
+    const rows = groups.get(key) || [];
+    rows.push(row);
+    groups.set(key, rows);
+  });
+
+  return [...groups.entries()]
+    .map(([key, rows]) => {
+      const [siteUrl, pageType] = key.split('::');
+      return {
+        key,
+        siteUrl,
+        pageType,
+        rows: rows.slice().sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
+      };
+    })
+    .sort((a, b) => {
+      const siteCompare = a.siteUrl.localeCompare(b.siteUrl);
+      if (siteCompare) return siteCompare;
+      return a.pageType.localeCompare(b.pageType);
+    });
 });
 
 function formatDate(value) {
@@ -129,6 +159,50 @@ function deltaClass(value, invert = false) {
       </template>
     </Panel>
 
+    <Panel title="GSC Page Type Trend" :icon="TrendingUp" :meta="`${pageTypeRows.length} rows`">
+      <div v-if="pageTypeGroups.length === 0" class="empty">No page type trend data yet</div>
+      <template v-else>
+        <div v-for="group in pageTypeGroups" :key="group.key" class="site-history-group page-type-group">
+          <div class="site-history-head">
+            <strong>{{ group.pageType }} · {{ group.siteUrl }}</strong>
+            <span>{{ group.rows.length }} snapshots · Collection / Product / Blog segmentation</span>
+          </div>
+          <div class="history-trend-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Captured</th>
+                  <th>Period</th>
+                  <th>Clicks</th>
+                  <th>Δ Clicks</th>
+                  <th>Impressions</th>
+                  <th>Δ Impr.</th>
+                  <th>CTR</th>
+                  <th>Position</th>
+                  <th>Pages</th>
+                  <th>Queries</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in group.rows.slice().reverse()" :key="`${row.id}-${row.pageType}`">
+                  <td>{{ formatDate(row.capturedAt) }}</td>
+                  <td>{{ row.dateRange?.startDate }} → {{ row.dateRange?.endDate }}</td>
+                  <td class="num">{{ formatNumber(row.clicks) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.clicks)">{{ formatDelta(row.delta?.clicks) }}</td>
+                  <td class="num">{{ formatNumber(row.impressions) }}</td>
+                  <td class="num" :class="deltaClass(row.delta?.impressions)">{{ formatDelta(row.delta?.impressions) }}</td>
+                  <td class="num">{{ formatPct(row.ctr) }}</td>
+                  <td class="num">{{ formatPosition(row.position) }}</td>
+                  <td class="num">{{ formatNumber(row.pagesCount) }}</td>
+                  <td class="num">{{ formatNumber(row.queriesCount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </Panel>
+
     <Panel title="Local Data Vault" :icon="Database" :meta="`${snapshots.length} unique snapshots`">
       <div v-if="dbStats" class="db-stats">
         <div>
@@ -144,8 +218,8 @@ function deltaClass(value, invert = false) {
           <span>Daily rows</span>
         </div>
         <div>
-          <strong>{{ dbStats.page_query_rows || 0 }}</strong>
-          <span>Page-query rows</span>
+          <strong>{{ dbStats.page_type_rows || 0 }}</strong>
+          <span>Page type rows</span>
         </div>
       </div>
       <div class="history-toolbar">

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 - 2026-05-20
+
+- Added GSC page type segmentation for Collection, Product, Blog, and Other pages.
+- Added a page type filter to the live GSC workspace.
+- Added SQLite `gsc_page_type_summary` storage and a page-type history API.
+- Added History page type trend tables for channel-style SEO analysis.
+
 ## 1.2.1 - 2026-05-19
 
 - Fixed GSC History deltas so changes are calculated within the same property only.

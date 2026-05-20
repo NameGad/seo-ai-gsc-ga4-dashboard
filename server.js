@@ -9,6 +9,7 @@ const {
   findDuplicateSnapshot,
   getDatabaseStats,
   getGscDeepAnalysis,
+  getGscPageTypeTrends,
   getGscSnapshotTrends,
   getMigrationStatus,
   initLocalDatabase,
@@ -547,6 +548,19 @@ app.get('/api/history/gsc-trends', (req, res) => {
     res.json({rows, totalRows: rows.length});
   } catch (err) {
     console.error('GSC history trend error', err.message);
+    res.status(500).json({error: err.message});
+  }
+});
+
+app.get('/api/history/gsc-page-types', (req, res) => {
+  try {
+    const rows = getGscPageTypeTrends({
+      siteUrl: req.query.siteUrl,
+      limit: req.query.limit
+    });
+    res.json({rows, totalRows: rows.length});
+  } catch (err) {
+    console.error('GSC page type trend error', err.message);
     res.status(500).json({error: err.message});
   }
 });

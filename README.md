@@ -27,6 +27,7 @@ npm start
 数据工作台说明：
 
 - `GSC`：当前可用的 Search Console 数据工作台。
+- `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Top Pages、Top Queries、低 CTR 机会和关键词机会。
 - `Insights`：GSC 深度分析工作区，基于本地历史快照识别页面衰退、关键词波动、低 CTR 机会、关键词内耗、搜索意图和新增/流失关键词。
 - `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
 - `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。
@@ -51,7 +52,16 @@ npm start
   - `gsc_queries`：按关键词维度的数据。
   - `gsc_page_queries`：页面 + 关键词组合数据。
   - `gsc_dimensions`：国家、设备、搜索外观和搜索类型拆分数据。
+  - `gsc_page_type_summary`：按 Collection、Product、Blog、Other 聚合的页面类型趋势数据。
 - 服务启动时会自动把 `data/snapshots/` 里已有的 JSON 快照同步进 SQLite。
+
+GSC 页面类型分组说明：
+
+- `Collection`：URL 路径包含 `/collections/`。
+- `Product`：URL 路径包含 `/products/`。
+- `Blog`：URL 路径包含 `/blogs/` 或 `/blog/`。
+- `Other`：不匹配以上规则的页面，例如首页、搜索页、支持页、品牌页等。
+- 页面类型分组会在前端实时筛选，也会在保存快照时写入 SQLite，方便后续和 GA4 的 landing page、engagement、conversion 数据联动。
 
 GSC 深度分析说明：
 
@@ -101,6 +111,7 @@ npm run dev
 - `POST /api/history/snapshots` — 将一次数据拉取结果保存为本地 JSON 快照。
 - `GET /api/history/snapshots` — 返回本地历史快照列表。
 - `GET /api/history/gsc-trends` — 返回按快照聚合的 GSC 历史趋势和相邻快照变化。
+- `GET /api/history/gsc-page-types` — 返回按 Collection/Product/Blog/Other 聚合的历史趋势。
 - `GET /api/history/gsc-deep-analysis` — 返回 GSC 深度分析结果，可选 `siteUrl`、`limit`、`minImpressions`。
 - `GET /api/history/stats` — 返回本地 SQLite 数据库统计。
 - `GET /api/history/migrations` — 返回本地 SQLite schema migration 状态。

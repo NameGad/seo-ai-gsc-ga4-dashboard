@@ -19,9 +19,19 @@ export function formatPct(value) {
   return `${(Number(value || 0) * 100).toFixed(2)}%`;
 }
 
+export const PAGE_TYPES = ['All', 'Collection', 'Product', 'Blog', 'Other'];
+
 export function detectShopifyType(url = '') {
-  if (url.includes('/blogs/')) return 'Blog';
-  if (url.includes('/collections/')) return 'Collection';
-  if (url.includes('/products/')) return 'Product';
+  const value = String(url).toLowerCase();
+  let pathname = value;
+  try {
+    pathname = new URL(value).pathname.toLowerCase();
+  } catch (err) {
+    pathname = value.split('?')[0].split('#')[0];
+  }
+
+  if (pathname.includes('/collections/')) return 'Collection';
+  if (pathname.includes('/products/')) return 'Product';
+  if (pathname.includes('/blogs/') || pathname.includes('/blog/')) return 'Blog';
   return 'Other';
 }

@@ -88,6 +88,10 @@ export function getGscHistoryTrends(params = {}) {
   return request('/api/history/gsc-trends', params);
 }
 
+export function getGscPageTypeTrends(params = {}) {
+  return request('/api/history/gsc-page-types', params);
+}
+
 export function getGscDeepAnalysis(params = {}) {
   return request('/api/history/gsc-deep-analysis', params);
 }

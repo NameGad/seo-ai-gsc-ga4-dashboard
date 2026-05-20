@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { BarChart3, BrainCircuit, Files, Gauge, Search, Sparkles, TrendingUp } from '@lucide/vue';
+import { BarChart3, BrainCircuit, Files, Funnel, Gauge, Search, Sparkles, TrendingUp } from '@lucide/vue';
 import AppHeader from './components/AppHeader.vue';
 import ControlBar from './components/ControlBar.vue';
 import DataTable from './components/DataTable.vue';
@@ -11,8 +11,8 @@ import MetricCards from './components/MetricCards.vue';
 import Panel from './components/Panel.vue';
 import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
-import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getHistoryStats, getPageQuery, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
-import { defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
+import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
+import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
 const dates = defaultDateRange();
@@ -35,12 +35,13 @@ const sites = ref([]);
 const snapshots = ref([]);
 const historyStats = ref(null);
 const historyTrendRows = ref([]);
+const pageTypeTrendRows = ref([]);
 const deepAnalysis = ref(null);
 const trendRows = ref([]);
-const topPages = ref([]);
-const topQueries = ref([]);
-const lowCtrRows = ref([]);
-const keywordRows = ref([]);
+const rawPages = ref([]);
+const rawQueries = ref([]);
+const rawPageQuery = ref([]);
+const pageTypeFilter = ref('All');
 
 const activeProperty = computed(() => controls.siteUrl || 'No property selected');
 const metrics = computed(() => {
@@ -56,6 +57,86 @@ const metrics = computed(() => {
     position: trendRows.value.length ? avgPosition.toFixed(2) : '-'
   };
 });
+
+const filteredPages = computed(() => {
+  if (pageTypeFilter.value === 'All') return rawPages.value;
+  return rawPages.value.filter(row => detectShopifyType(row.page) === pageTypeFilter.value);
+});
+
+const filteredPageQuery = computed(() => {
+  if (pageTypeFilter.value === 'All') return rawPageQuery.value;
+  return rawPageQuery.value.filter(row => detectShopifyType(row.page) === pageTypeFilter.value);
+});
+
+const pageTypeSummary = computed(() => {
+  const buckets = new Map(PAGE_TYPES.filter(type => type !== 'All').map(type => [type, {
+    Type: type,
+    Clicks: 0,
+    Impressions: 0,
+    pages: 0,
+    weightedPosition: 0
+  }]));
+
+  rawPages.value.forEach(row => {
+    const type = detectShopifyType(row.page);
+    const current = buckets.get(type) || buckets.get('Other');
+    current.Clicks += row.clicks || 0;
+    current.Impressions += row.impressions || 0;
+    current.pages += 1;
+    current.weightedPosition += (row.position || 0) * (row.impressions || 0);
+  });
+
+  return [...buckets.values()]
+    .filter(row => row.Impressions > 0 || row.pages > 0)
+    .sort((a, b) => b.Impressions - a.Impressions)
+    .map(row => ({
+      Type: row.Type,
+      Pages: formatNumber(row.pages),
+      Clicks: formatNumber(row.Clicks),
+      Impressions: formatNumber(row.Impressions),
+      CTR: formatPct(row.Impressions ? row.Clicks / row.Impressions : 0),
+      Position: row.Impressions ? (row.weightedPosition / row.Impressions).toFixed(2) : '-'
+    }));
+});
+
+const topPages = computed(() => filteredPages.value
+  .slice()
+  .sort((a, b) => b.impressions - a.impressions)
+  .slice(0, 50)
+  .map(row => ({
+    Page: row.page,
+    Type: detectShopifyType(row.page),
+    Clicks: formatNumber(row.clicks),
+    Impressions: formatNumber(row.impressions),
+    CTR: formatPct(row.ctr),
+    Position: row.position.toFixed(2)
+  })));
+
+const topQueries = computed(() => {
+  if (pageTypeFilter.value === 'All') {
+    return rawQueries.value
+      .slice()
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 50)
+      .map(formatQueryRow);
+  }
+
+  return aggregateQueries(filteredPageQuery.value)
+    .slice(0, 50)
+    .map(formatQueryRow);
+});
+
+const lowCtrRows = computed(() => filteredPageQuery.value
+  .filter(row => row.impressions >= 500 && row.position <= 12 && (row.ctr * 100) < 1.5)
+  .sort((a, b) => b.impressions - a.impressions)
+  .slice(0, 100)
+  .map(formatOpportunityRow));
+
+const keywordRows = computed(() => filteredPageQuery.value
+  .filter(row => row.impressions >= 200 && row.position >= 8 && row.position <= 20)
+  .sort((a, b) => b.impressions - a.impressions)
+  .slice(0, 100)
+  .map(formatOpportunityRow));
 
 function setStatus(message, type = 'default') {
   status.message = message;
@@ -95,14 +176,16 @@ async function loadSites() {
 
 async function loadSnapshots() {
   try {
-    const [data, stats, trends] = await Promise.all([
+    const [data, stats, trends, pageTypes] = await Promise.all([
       getSnapshots(),
       getHistoryStats(),
-      getGscHistoryTrends({limit: 100})
+      getGscHistoryTrends({limit: 100}),
+      getGscPageTypeTrends({limit: 200})
     ]);
     snapshots.value = data.rows || [];
     historyStats.value = stats.stats || null;
     historyTrendRows.value = trends.rows || [];
+    pageTypeTrendRows.value = pageTypes.rows || [];
     await loadDeepAnalysis();
   } catch (err) {
     setStatus(err.message || '读取本地历史数据失败。', 'error');
@@ -152,40 +235,9 @@ async function loadData() {
     ]);
 
     trendRows.value = trend.rows || [];
-    topPages.value = (pages.rows || [])
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 50)
-      .map(row => ({
-        Page: row.page,
-        Type: detectShopifyType(row.page),
-        Clicks: formatNumber(row.clicks),
-        Impressions: formatNumber(row.impressions),
-        CTR: formatPct(row.ctr),
-        Position: row.position.toFixed(2)
-      }));
-
-    topQueries.value = (queries.rows || [])
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 50)
-      .map(row => ({
-        Query: row.query,
-        Clicks: formatNumber(row.clicks),
-        Impressions: formatNumber(row.impressions),
-        CTR: formatPct(row.ctr),
-        Position: row.position.toFixed(2)
-      }));
-
-    lowCtrRows.value = (pageQuery.rows || [])
-      .filter(row => row.impressions >= 500 && row.position <= 12 && (row.ctr * 100) < 1.5)
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 100)
-      .map(formatOpportunityRow);
-
-    keywordRows.value = (pageQuery.rows || [])
-      .filter(row => row.impressions >= 200 && row.position >= 8 && row.position <= 20)
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 100)
-      .map(formatOpportunityRow);
+    rawPages.value = pages.rows || [];
+    rawQueries.value = queries.rows || [];
+    rawPageQuery.value = pageQuery.rows || [];
 
     const snapshot = await saveSnapshot({
       source: 'gsc',
@@ -226,12 +278,49 @@ async function loadData() {
 function formatOpportunityRow(row) {
   return {
     Page: row.page,
+    Type: detectShopifyType(row.page),
     Query: row.query,
     Clicks: formatNumber(row.clicks),
     Impressions: formatNumber(row.impressions),
     CTR: formatPct(row.ctr),
     Position: row.position.toFixed(2)
   };
+}
+
+function formatQueryRow(row) {
+  return {
+    Query: row.query,
+    Clicks: formatNumber(row.clicks),
+    Impressions: formatNumber(row.impressions),
+    CTR: formatPct(row.ctr),
+    Position: row.position.toFixed(2)
+  };
+}
+
+function aggregateQueries(rows) {
+  const buckets = new Map();
+  rows.forEach(row => {
+    const current = buckets.get(row.query) || {
+      query: row.query,
+      clicks: 0,
+      impressions: 0,
+      weightedPosition: 0
+    };
+    current.clicks += row.clicks || 0;
+    current.impressions += row.impressions || 0;
+    current.weightedPosition += (row.position || 0) * (row.impressions || 0);
+    buckets.set(row.query, current);
+  });
+
+  return [...buckets.values()]
+    .map(row => ({
+      query: row.query,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.impressions ? row.clicks / row.impressions : 0,
+      position: row.impressions ? row.weightedPosition / row.impressions : 0
+    }))
+    .sort((a, b) => b.impressions - a.impressions);
 }
 
 onMounted(() => {
@@ -257,6 +346,27 @@ onMounted(() => {
 
       <MetricCards :metrics="metrics" />
 
+      <section class="channel-filter">
+        <div>
+          <Funnel />
+          <span>
+            <strong>Page type filter</strong>
+            <small>Segment GSC traffic by Collection, Product, Blog, or Other pages.</small>
+          </span>
+        </div>
+        <div class="segmented-control">
+          <button
+            v-for="type in PAGE_TYPES"
+            :key="type"
+            type="button"
+            :class="{ active: pageTypeFilter === type }"
+            @click="pageTypeFilter = type"
+          >
+            {{ type }}
+          </button>
+        </div>
+      </section>
+
       <section class="workspace">
         <section>
           <Panel title="Performance Trend" :icon="TrendingUp" :meta="`${trendRows.length} days`">
@@ -264,6 +374,10 @@ onMounted(() => {
           </Panel>
 
           <div class="tables">
+            <Panel title="Page Type Summary" :icon="Funnel" :meta="`${pageTypeSummary.length} types`">
+              <DataTable :rows="pageTypeSummary" :columns="['Type', 'Pages', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            </Panel>
+
             <Panel title="Top Pages" :icon="Files" :meta="`${topPages.length} rows`">
               <DataTable :rows="topPages" :columns="['Page', 'Type', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
@@ -276,11 +390,11 @@ onMounted(() => {
 
         <aside class="side-stack">
           <Panel title="Low CTR Opportunities" :icon="Gauge" :meta="`${lowCtrRows.length} rows`">
-            <DataTable :rows="lowCtrRows" :columns="['Page', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            <DataTable :rows="lowCtrRows" :columns="['Page', 'Type', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
 
           <Panel title="Keyword Opportunities" :icon="Sparkles" :meta="`${keywordRows.length} rows`">
-            <DataTable :rows="keywordRows" :columns="['Page', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            <DataTable :rows="keywordRows" :columns="['Page', 'Type', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
         </aside>
       </section>
@@ -310,6 +424,7 @@ onMounted(() => {
       v-else-if="activeView === 'history'"
       :snapshots="snapshots"
       :trend-rows="historyTrendRows"
+      :page-type-rows="pageTypeTrendRows"
       :db-stats="historyStats"
       :busy="busy"
       @refresh="loadSnapshots"

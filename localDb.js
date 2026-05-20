@@ -155,6 +155,29 @@ const MIGRATIONS = [
           ON snapshots(source, site_url, start_date, end_date, data_hash);
       `);
     }
+  },
+  {
+    version: 5,
+    name: 'gsc_page_type_summary',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS gsc_page_type_summary (
+          snapshot_id TEXT NOT NULL,
+          page_type TEXT NOT NULL,
+          clicks INTEGER NOT NULL DEFAULT 0,
+          impressions INTEGER NOT NULL DEFAULT 0,
+          ctr REAL NOT NULL DEFAULT 0,
+          position REAL NOT NULL DEFAULT 0,
+          pages_count INTEGER NOT NULL DEFAULT 0,
+          queries_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (snapshot_id, page_type),
+          FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gsc_page_type_snapshot_impressions
+          ON gsc_page_type_summary(snapshot_id, impressions DESC);
+      `);
+    }
   }
 ];
 
@@ -216,6 +239,7 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
     database.prepare('DELETE FROM gsc_queries WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_page_queries WHERE snapshot_id = ?').run(snapshot.id);
     database.prepare('DELETE FROM gsc_dimensions WHERE snapshot_id = ?').run(snapshot.id);
+    database.prepare('DELETE FROM gsc_page_type_summary WHERE snapshot_id = ?').run(snapshot.id);
 
     insertRows(database, 'gsc_trend', ['snapshot_id', 'date', 'clicks', 'impressions', 'ctr', 'position'],
       (datasets.trend || []).map(row => [snapshot.id, row.date, toInt(row.clicks), toInt(row.impressions), toNum(row.ctr), toNum(row.position)]));
@@ -235,6 +259,13 @@ function saveSnapshotToDatabase(snapshot, rawSnapshotPath = null) {
       ...mapDimensionRows(snapshot.id, 'searchAppearance', datasets.searchAppearances || [], 'appearance'),
       ...mapDimensionRows(snapshot.id, 'searchType', datasets.searchTypes || [], 'type')
     ]);
+
+    insertRows(
+      database,
+      'gsc_page_type_summary',
+      ['snapshot_id', 'page_type', 'clicks', 'impressions', 'ctr', 'position', 'pages_count', 'queries_count'],
+      aggregatePageTypeSummary(snapshot.id, datasets.pages || [], datasets.pageQuery || [])
+    );
 
     database.exec('COMMIT');
   } catch (err) {
@@ -320,6 +351,65 @@ function mapDimensionRows(snapshotId, dimensionType, rows, valueKey) {
   ]);
 }
 
+function classifyPageType(url = '') {
+  const value = String(url).toLowerCase();
+  let pathname = value;
+  try {
+    pathname = new URL(value).pathname.toLowerCase();
+  } catch (err) {
+    pathname = value.split('?')[0].split('#')[0];
+  }
+
+  if (pathname.includes('/collections/')) return 'Collection';
+  if (pathname.includes('/products/')) return 'Product';
+  if (pathname.includes('/blogs/') || pathname.includes('/blog/')) return 'Blog';
+  return 'Other';
+}
+
+function aggregatePageTypeSummary(snapshotId, pageRows, pageQueryRows) {
+  const buckets = new Map();
+  pageRows.forEach(row => {
+    const pageType = classifyPageType(row.page);
+    const current = buckets.get(pageType) || {
+      snapshotId,
+      pageType,
+      clicks: 0,
+      impressions: 0,
+      weightedPosition: 0,
+      pages: new Set(),
+      queries: new Set()
+    };
+    const clicks = toInt(row.clicks);
+    const impressions = toInt(row.impressions);
+    current.clicks += clicks;
+    current.impressions += impressions;
+    current.weightedPosition += toNum(row.position) * impressions;
+    current.pages.add(row.page);
+    buckets.set(pageType, current);
+  });
+
+  pageQueryRows.forEach(row => {
+    const pageType = classifyPageType(row.page);
+    const current = buckets.get(pageType);
+    if (!current || !row.query) return;
+    current.queries.add(row.query);
+  });
+
+  return ['Collection', 'Product', 'Blog', 'Other']
+    .map(pageType => buckets.get(pageType))
+    .filter(Boolean)
+    .map(bucket => [
+      bucket.snapshotId,
+      bucket.pageType,
+      bucket.clicks,
+      bucket.impressions,
+      bucket.impressions ? bucket.clicks / bucket.impressions : 0,
+      bucket.impressions ? bucket.weightedPosition / bucket.impressions : 0,
+      bucket.pages.size,
+      bucket.queries.size
+    ]);
+}
+
 function listDatabaseSnapshots({source} = {}) {
   const database = getDb();
   const rows = source
@@ -394,6 +484,90 @@ function getGscSnapshotTrends({siteUrl, limit = 50} = {}) {
     : mappedRows
       .sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
       .slice(-safeLimit);
+}
+
+function getGscPageTypeTrends({siteUrl, limit = 100} = {}) {
+  const database = getDb();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 400));
+  const where = siteUrl ? 'WHERE s.source = ? AND s.site_url = ?' : 'WHERE s.source = ?';
+  const args = siteUrl ? ['gsc', siteUrl] : ['gsc'];
+  const rows = database.prepare(`
+    SELECT
+      s.id,
+      s.site_url,
+      s.start_date,
+      s.end_date,
+      s.captured_at,
+      s.data_hash,
+      p.page_type,
+      p.clicks,
+      p.impressions,
+      p.ctr,
+      p.position,
+      p.pages_count,
+      p.queries_count
+    FROM snapshots s
+    INNER JOIN gsc_page_type_summary p ON p.snapshot_id = s.id
+    ${where}
+    ORDER BY s.captured_at DESC, p.impressions DESC
+  `).all(...args);
+
+  const dedupedRows = [];
+  const seen = new Set();
+  rows.forEach(row => {
+    const key = [
+      row.source || 'gsc',
+      row.site_url,
+      row.start_date || '',
+      row.end_date || '',
+      row.data_hash || row.id,
+      row.page_type
+    ].join('\u001f');
+    if (seen.has(key)) return;
+    seen.add(key);
+    dedupedRows.push(row);
+  });
+
+  const orderedRows = dedupedRows.sort((a, b) => {
+    const siteCompare = a.site_url.localeCompare(b.site_url);
+    if (siteCompare) return siteCompare;
+    const typeCompare = a.page_type.localeCompare(b.page_type);
+    if (typeCompare) return typeCompare;
+    return new Date(a.captured_at) - new Date(b.captured_at);
+  });
+  const previousByGroup = new Map();
+  const mappedRows = orderedRows.map(row => {
+    const groupKey = `${row.site_url}\u001f${row.page_type}`;
+    const previous = previousByGroup.get(groupKey);
+    const mapped = {
+      id: row.id,
+      siteUrl: row.site_url,
+      pageType: row.page_type,
+      dateRange: {
+        startDate: row.start_date,
+        endDate: row.end_date
+      },
+      capturedAt: row.captured_at,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.ctr,
+      position: row.position,
+      pagesCount: row.pages_count,
+      queriesCount: row.queries_count,
+      delta: previous ? {
+        clicks: row.clicks - previous.clicks,
+        impressions: row.impressions - previous.impressions,
+        ctr: row.ctr - previous.ctr,
+        position: row.position - previous.position
+      } : null
+    };
+    previousByGroup.set(groupKey, row);
+    return mapped;
+  });
+
+  return mappedRows
+    .sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt))
+    .slice(-safeLimit);
 }
 
 function getGscDeepAnalysis({siteUrl, limit = 50, minImpressions = 100} = {}) {
@@ -509,7 +683,8 @@ function getDatabaseStats() {
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_trend WHERE gsc_trend.snapshot_id = snapshots.id)), 0) AS trend_rows,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_pages WHERE gsc_pages.snapshot_id = snapshots.id)), 0) AS page_rows,
       COALESCE(SUM((SELECT COUNT(*) FROM gsc_queries WHERE gsc_queries.snapshot_id = snapshots.id)), 0) AS query_rows,
-      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_queries WHERE gsc_page_queries.snapshot_id = snapshots.id)), 0) AS page_query_rows
+      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_queries WHERE gsc_page_queries.snapshot_id = snapshots.id)), 0) AS page_query_rows,
+      COALESCE(SUM((SELECT COUNT(*) FROM gsc_page_type_summary WHERE gsc_page_type_summary.snapshot_id = snapshots.id)), 0) AS page_type_rows
     FROM snapshots
   `).get();
   return row;
@@ -939,10 +1114,12 @@ module.exports = {
   findDuplicateSnapshot,
   getDatabaseStats,
   getGscDeepAnalysis,
+  getGscPageTypeTrends,
   getGscSnapshotTrends,
   getMigrationStatus,
   initLocalDatabase,
   listDatabaseSnapshots,
   saveSnapshotToDatabase,
-  syncSnapshotsFromDisk
+  syncSnapshotsFromDisk,
+  classifyPageType
 };
