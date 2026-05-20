@@ -64,6 +64,7 @@ GSC 页面类型分组说明：
 - `Other`：不匹配以上规则的页面，例如首页、搜索页、支持页、品牌页等。
 - 页面类型分组会在前端实时筛选，也会在保存快照时写入 SQLite，方便后续和 GA4 的 landing page、engagement、conversion 数据联动。
 - 选择 Collection/Product/Blog/Other 后，Performance Trend 使用 `date + page` 拉取到的每日数据聚合，不再使用整段时间的页面总量；图表下方会展示每日明细行。
+- 打开项目或刷新页面后，前端会优先把最新的本地 GSC 快照恢复到工作区，让页面类型筛选可以直接展示；如果旧快照没有 daily page type trend，选择 Collection/Product/Blog/Other 时会自动补抓 `date + page` 数据并保存新快照。
 
 GSC 深度分析说明：
 

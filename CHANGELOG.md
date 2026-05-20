@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.4 - 2026-05-20
+
+- Fixed page type filters so saved local GSC snapshots hydrate the live workspace automatically.
+- Added lazy daily page type fetching when users select Collection/Product/Blog/Other and the restored snapshot lacks daily trend rows.
+- Added an active snapshot/empty-state hint for Collection/Product/Blog/Other filtering.
+- Preserved daily page type trend rows from snapshots so filtered Performance Trend charts can render after refresh.
+
 ## 1.3.3 - 2026-05-20
 
 - Fixed page type trend logic so Collection/Product/Blog/Other charts use daily `date + page` data instead of page totals.

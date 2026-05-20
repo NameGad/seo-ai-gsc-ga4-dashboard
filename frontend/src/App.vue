@@ -11,7 +11,7 @@ import MetricCards from './components/MetricCards.vue';
 import Panel from './components/Panel.vue';
 import TrendChart from './components/TrendChart.vue';
 import WorkspaceNav from './components/WorkspaceNav.vue';
-import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPageTypeTrend, getPages, getQueries, getSites, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
+import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeTrends, getHistoryStats, getPageQuery, getPageTypeTrend, getPages, getQueries, getSites, getSnapshot, getSnapshots, getTrend, saveSnapshot } from './api/gsc';
 import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
@@ -43,6 +43,9 @@ const rawPages = ref([]);
 const rawQueries = ref([]);
 const rawPageQuery = ref([]);
 const pageTypeFilter = ref('All');
+const workspaceSnapshotId = ref('');
+const workspaceDatasets = ref({});
+const pageTypeTrendLoading = ref(false);
 
 const activeProperty = computed(() => controls.siteUrl || 'No property selected');
 const metrics = computed(() => {
@@ -137,6 +140,8 @@ const pageTypeDailyRows = computed(() => performanceTrendRows.value.map(row => (
   Pages: row.pagesCount ? formatNumber(row.pagesCount) : '-'
 })));
 
+const workspaceDataReady = computed(() => rawPages.value.length > 0 || trendRows.value.length > 0);
+
 const topPages = computed(() => filteredPages.value
   .slice()
   .sort((a, b) => b.impressions - a.impressions)
@@ -181,6 +186,64 @@ function setStatus(message, type = 'default') {
   status.type = type;
 }
 
+async function selectPageType(type) {
+  pageTypeFilter.value = type;
+  if (type !== 'All') await ensurePageTypeTrendRows();
+}
+
+async function ensurePageTypeTrendRows() {
+  if (rawPageTypeTrend.value.length || pageTypeTrendLoading.value || busy.value) return;
+  const siteUrl = controls.siteUrl.trim();
+  if (!siteUrl || !controls.startDate || !controls.endDate) return;
+
+  pageTypeTrendLoading.value = true;
+  setStatus('Fetching daily page type trend rows for Collection/Product/Blog filters...');
+  try {
+    const pageTypeTrend = await getPageTypeTrend({
+      siteUrl,
+      startDate: controls.startDate,
+      endDate: controls.endDate,
+      rowLimit: 25000,
+      maxPages: 20
+    });
+    rawPageTypeTrend.value = pageTypeTrend.rows || [];
+
+    if (rawPageTypeTrend.value.length && (rawPages.value.length || trendRows.value.length)) {
+      const snapshot = await saveSnapshot({
+        source: 'gsc',
+        siteUrl,
+        dateRange: {startDate: controls.startDate, endDate: controls.endDate},
+        metrics: metrics.value,
+        datasets: {
+          ...workspaceDatasets.value,
+          trend: trendRows.value,
+          pageTypeTrend: rawPageTypeTrend.value,
+          pages: rawPages.value,
+          queries: rawQueries.value,
+          pageQuery: rawPageQuery.value
+        }
+      });
+      workspaceDatasets.value = {
+        ...workspaceDatasets.value,
+        trend: trendRows.value,
+        pageTypeTrend: rawPageTypeTrend.value,
+        pages: rawPages.value,
+        queries: rawQueries.value,
+        pageQuery: rawPageQuery.value
+      };
+      workspaceSnapshotId.value = snapshot.id || workspaceSnapshotId.value;
+      await loadSnapshots({hydrateWorkspace: false});
+      setStatus(`Fetched and saved daily page type trend rows: ${rawPageTypeTrend.value.length} rows.`, 'success');
+    } else {
+      setStatus('No daily page type trend rows were returned for this property and date range.', 'default');
+    }
+  } catch (err) {
+    setStatus(err.message || '页面类型每日趋势拉取失败。', 'error');
+  } finally {
+    pageTypeTrendLoading.value = false;
+  }
+}
+
 function handleAuthReturn() {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get('auth');
@@ -212,7 +275,7 @@ async function loadSites() {
   }
 }
 
-async function loadSnapshots() {
+async function loadSnapshots({hydrateWorkspace = true} = {}) {
   try {
     const [data, stats, trends, pageTypes] = await Promise.all([
       getSnapshots(),
@@ -224,10 +287,41 @@ async function loadSnapshots() {
     historyStats.value = stats.stats || null;
     historyTrendRows.value = trends.rows || [];
     pageTypeTrendRows.value = pageTypes.rows || [];
+    if (hydrateWorkspace) await hydrateWorkspaceFromLatestSnapshot(data.rows || []);
     await loadDeepAnalysis();
   } catch (err) {
     setStatus(err.message || '读取本地历史数据失败。', 'error');
   }
+}
+
+async function hydrateWorkspaceFromLatestSnapshot(snapshotRows) {
+  if (!snapshotRows.length) return;
+  if (rawPages.value.length || rawPageQuery.value.length || rawPageTypeTrend.value.length) return;
+
+  const selectedSite = controls.siteUrl.trim();
+  const candidate = snapshotRows.find(row => row.source === 'gsc' && row.siteUrl === selectedSite)
+    || snapshotRows.find(row => row.source === 'gsc')
+    || snapshotRows[0];
+  if (!candidate?.id) return;
+
+  const snapshot = await getSnapshot(candidate.id);
+  applySnapshotToWorkspace(snapshot);
+  setStatus(`Loaded latest local snapshot into GSC workspace: ${candidate.id}`, 'success');
+}
+
+function applySnapshotToWorkspace(snapshot) {
+  const datasets = snapshot.datasets || {};
+  if (!controls.siteUrl && snapshot.siteUrl) controls.siteUrl = snapshot.siteUrl;
+  if (snapshot.dateRange?.startDate) controls.startDate = snapshot.dateRange.startDate;
+  if (snapshot.dateRange?.endDate) controls.endDate = snapshot.dateRange.endDate;
+
+  trendRows.value = datasets.trend || [];
+  rawPageTypeTrend.value = datasets.pageTypeTrend || [];
+  rawPages.value = datasets.pages || [];
+  rawQueries.value = datasets.queries || [];
+  rawPageQuery.value = datasets.pageQuery || [];
+  workspaceDatasets.value = datasets;
+  workspaceSnapshotId.value = snapshot.id || '';
 }
 
 async function loadDeepAnalysis() {
@@ -281,6 +375,17 @@ async function loadData() {
     rawPages.value = pages.rows || [];
     rawQueries.value = queries.rows || [];
     rawPageQuery.value = pageQuery.rows || [];
+    workspaceDatasets.value = {
+      trend: trend.rows || [],
+      pageTypeTrend: pageTypeTrend.rows || [],
+      pages: pages.rows || [],
+      queries: queries.rows || [],
+      pageQuery: pageQuery.rows || [],
+      countries: breakdowns.countries || [],
+      devices: breakdowns.devices || [],
+      searchAppearances: breakdowns.searchAppearances || [],
+      searchTypes: breakdowns.searchTypes || []
+    };
 
     const snapshot = await saveSnapshot({
       source: 'gsc',
@@ -290,19 +395,10 @@ async function loadData() {
         endDate: controls.endDate
       },
       metrics: metrics.value,
-      datasets: {
-        trend: trend.rows || [],
-        pageTypeTrend: pageTypeTrend.rows || [],
-        pages: pages.rows || [],
-        queries: queries.rows || [],
-        pageQuery: pageQuery.rows || [],
-        countries: breakdowns.countries || [],
-        devices: breakdowns.devices || [],
-        searchAppearances: breakdowns.searchAppearances || [],
-        searchTypes: breakdowns.searchTypes || []
-      }
+      datasets: workspaceDatasets.value
     });
-    await loadSnapshots();
+    workspaceSnapshotId.value = snapshot.id || workspaceSnapshotId.value;
+    await loadSnapshots({hydrateWorkspace: false});
     setStatus(
       snapshot.cached
         ? `No data changes detected. Used cached snapshot: ${snapshot.id}`
@@ -405,7 +501,11 @@ onMounted(() => {
           <Funnel />
           <span>
             <strong>Page type filter</strong>
-            <small>Segment GSC traffic by Collection, Product, Blog, or Other pages.</small>
+            <small>
+              {{ workspaceDataReady
+                ? `Filtering ${workspaceSnapshotId ? `snapshot ${workspaceSnapshotId}` : 'current loaded data'}`
+                : 'Click Load Data or use a saved local snapshot to enable filtering.' }}
+            </small>
           </span>
         </div>
         <div class="segmented-control">
@@ -414,12 +514,16 @@ onMounted(() => {
             :key="type"
             type="button"
             :class="{ active: pageTypeFilter === type }"
-            @click="pageTypeFilter = type"
+            @click="selectPageType(type)"
           >
             {{ type }}
           </button>
         </div>
       </section>
+
+      <div v-if="!workspaceDataReady" class="empty">
+        No GSC workspace data is loaded yet. Click Load Data, or keep a saved snapshot available so the dashboard can restore it automatically.
+      </div>
 
       <section class="workspace">
         <section>
@@ -429,8 +533,11 @@ onMounted(() => {
             :meta="`${performanceTrendRows.length} points`"
           >
             <TrendChart :key="performanceTrendKey" :rows="performanceTrendRows" />
-            <div v-if="pageTypeFilter !== 'All' && performanceTrendRows.length === 0" class="empty">
-              No daily {{ pageTypeFilter }} trend data yet. Click Load Data again to fetch date + page level GSC rows.
+            <div v-if="pageTypeFilter !== 'All' && pageTypeTrendLoading" class="empty">
+              Fetching daily {{ pageTypeFilter }} trend data from GSC...
+            </div>
+            <div v-else-if="pageTypeFilter !== 'All' && performanceTrendRows.length === 0" class="empty">
+              No daily {{ pageTypeFilter }} trend data yet. Click Load Data, or keep this filter selected to fetch date + page level GSC rows.
             </div>
           </Panel>
 
