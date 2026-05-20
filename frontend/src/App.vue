@@ -15,6 +15,8 @@ import { getBreakdowns, getGscDeepAnalysis, getGscHistoryTrends, getGscPageTypeT
 import { PAGE_TYPES, defaultDateRange, detectShopifyType, formatNumber, formatPct } from './utils';
 
 const savedSite = localStorage.getItem('gsc:lastSite') || '';
+const savedBrandTerms = localStorage.getItem('gsc:brandTerms') || '';
+const savedQuerySegment = localStorage.getItem('gsc:querySegment') || 'All';
 const dates = defaultDateRange();
 const savedTheme = localStorage.getItem('seo-dashboard:theme');
 const preferredTheme = savedTheme
@@ -47,9 +49,12 @@ const rawPages = ref([]);
 const rawQueries = ref([]);
 const rawPageQuery = ref([]);
 const pageTypeFilter = ref('All');
+const querySegment = ref(['All', 'Branded', 'Non-branded'].includes(savedQuerySegment) ? savedQuerySegment : 'All');
+const brandTerms = ref(savedBrandTerms);
 const workspaceSnapshotId = ref('');
 const workspaceDatasets = ref({});
 const pageTypeTrendLoading = ref(false);
+const querySegments = ['All', 'Branded', 'Non-branded'];
 
 const activeProperty = computed(() => controls.siteUrl || 'No property selected');
 const metrics = computed(() => {
@@ -102,6 +107,10 @@ const filteredPageQuery = computed(() => {
   if (pageTypeFilter.value === 'All') return rawPageQuery.value;
   return rawPageQuery.value.filter(row => detectShopifyType(row.page) === pageTypeFilter.value);
 });
+
+const effectiveBrandTerms = computed(() => parseBrandTerms(brandTerms.value || inferBrandTerms(controls.siteUrl)));
+
+const segmentedPageQuery = computed(() => filterByQuerySegment(filteredPageQuery.value));
 
 const pageTypeSummary = computed(() => {
   const buckets = new Map(PAGE_TYPES.filter(type => type !== 'All').map(type => [type, {
@@ -160,30 +169,56 @@ const topPages = computed(() => filteredPages.value
   })));
 
 const topQueries = computed(() => {
-  if (pageTypeFilter.value === 'All') {
-    return rawQueries.value
-      .slice()
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 50)
-      .map(formatQueryRow);
-  }
+  const rows = pageTypeFilter.value === 'All'
+    ? filterByQuerySegment(rawQueries.value)
+    : filterByQuerySegment(aggregateQueries(filteredPageQuery.value));
 
-  return aggregateQueries(filteredPageQuery.value)
+  return rows
+    .slice()
+    .sort((a, b) => b.impressions - a.impressions)
     .slice(0, 50)
     .map(formatQueryRow);
 });
 
-const lowCtrRows = computed(() => filteredPageQuery.value
+const lowCtrRows = computed(() => segmentedPageQuery.value
   .filter(row => row.impressions >= 500 && row.position <= 12 && (row.ctr * 100) < 1.5)
   .sort((a, b) => b.impressions - a.impressions)
   .slice(0, 100)
   .map(formatOpportunityRow));
 
-const keywordRows = computed(() => filteredPageQuery.value
+const keywordRows = computed(() => segmentedPageQuery.value
   .filter(row => row.impressions >= 200 && row.position >= 8 && row.position <= 20)
   .sort((a, b) => b.impressions - a.impressions)
   .slice(0, 100)
   .map(formatOpportunityRow));
+
+const querySegmentSummary = computed(() => {
+  const rows = pageTypeFilter.value === 'All' ? rawQueries.value : aggregateQueries(filteredPageQuery.value);
+  const buckets = {
+    Branded: {label: 'Branded', clicks: 0, impressions: 0, weightedPosition: 0, queries: 0},
+    'Non-branded': {label: 'Non-branded', clicks: 0, impressions: 0, weightedPosition: 0, queries: 0}
+  };
+
+  rows.forEach(row => {
+    const key = isBrandedQuery(row.query) ? 'Branded' : 'Non-branded';
+    const current = buckets[key];
+    current.clicks += row.clicks || 0;
+    current.impressions += row.impressions || 0;
+    current.weightedPosition += (row.position || 0) * (row.impressions || 0);
+    current.queries += 1;
+  });
+
+  return Object.values(buckets)
+    .filter(row => row.impressions > 0 || row.queries > 0)
+    .map(row => ({
+      Segment: row.label,
+      Queries: formatNumber(row.queries),
+      Clicks: formatNumber(row.clicks),
+      Impressions: formatNumber(row.impressions),
+      CTR: formatPct(row.impressions ? row.clicks / row.impressions : 0),
+      Position: row.impressions ? (row.weightedPosition / row.impressions).toFixed(2) : '-'
+    }));
+});
 
 function setStatus(message, type = 'default') {
   status.message = message;
@@ -192,6 +227,46 @@ function setStatus(message, type = 'default') {
 
 function toggleTheme() {
   themeMode.value = themeMode.value === 'dark' ? 'light' : 'dark';
+}
+
+function parseBrandTerms(value = '') {
+  return String(value)
+    .split(/[,;\n]/)
+    .map(term => normalizeQuery(term))
+    .filter(term => term.length >= 2);
+}
+
+function inferBrandTerms(siteUrl = '') {
+  try {
+    const value = siteUrl.startsWith('sc-domain:')
+      ? `https://${siteUrl.replace('sc-domain:', '')}`
+      : siteUrl;
+    const hostname = new URL(value).hostname.toLowerCase();
+    const parts = hostname.split('.').filter(Boolean);
+    const ignored = new Set(['www', 'shop', 'store', 'blog', 'app', 'admin', 'support']);
+    const candidates = parts.filter(part => !ignored.has(part));
+    return candidates.length >= 2 ? candidates[candidates.length - 2] : candidates[0] || '';
+  } catch (err) {
+    return '';
+  }
+}
+
+function normalizeQuery(value = '') {
+  return String(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isBrandedQuery(query = '') {
+  const value = normalizeQuery(query);
+  const terms = effectiveBrandTerms.value;
+  if (!value || !terms.length) return false;
+  return terms.some(term => value.includes(term));
+}
+
+function filterByQuerySegment(rows) {
+  if (querySegment.value === 'All') return rows;
+  return rows.filter(row => querySegment.value === 'Branded'
+    ? isBrandedQuery(row.query)
+    : !isBrandedQuery(row.query));
 }
 
 async function selectPageType(type) {
@@ -430,6 +505,7 @@ function formatOpportunityRow(row) {
     Page: row.page,
     Type: detectShopifyType(row.page),
     Query: row.query,
+    Segment: isBrandedQuery(row.query) ? 'Branded' : 'Non-branded',
     Clicks: formatNumber(row.clicks),
     Impressions: formatNumber(row.impressions),
     CTR: formatPct(row.ctr),
@@ -440,6 +516,7 @@ function formatOpportunityRow(row) {
 function formatQueryRow(row) {
   return {
     Query: row.query,
+    Segment: isBrandedQuery(row.query) ? 'Branded' : 'Non-branded',
     Clicks: formatNumber(row.clicks),
     Impressions: formatNumber(row.impressions),
     CTR: formatPct(row.ctr),
@@ -491,6 +568,14 @@ watch(themeMode, mode => {
   document.documentElement.style.colorScheme = mode;
   localStorage.setItem('seo-dashboard:theme', mode);
 }, {immediate: true});
+
+watch(querySegment, segment => {
+  localStorage.setItem('gsc:querySegment', segment);
+});
+
+watch(brandTerms, terms => {
+  localStorage.setItem('gsc:brandTerms', terms);
+});
 </script>
 
 <template>
@@ -540,6 +625,38 @@ watch(themeMode, mode => {
         </div>
       </section>
 
+      <section class="channel-filter query-filter">
+        <div>
+          <Search />
+          <span>
+            <strong>Query segment</strong>
+            <small>
+              Split GSC queries by branded and non-branded demand. Active brand terms:
+              {{ effectiveBrandTerms.length ? effectiveBrandTerms.join(', ') : 'none' }}
+            </small>
+          </span>
+        </div>
+        <label class="brand-terms-field">
+          Brand terms
+          <input
+            v-model="brandTerms"
+            type="text"
+            :placeholder="inferBrandTerms(controls.siteUrl) || 'rapoo, brand name'"
+          />
+        </label>
+        <div class="segmented-control">
+          <button
+            v-for="segment in querySegments"
+            :key="segment"
+            type="button"
+            :class="{ active: querySegment === segment }"
+            @click="querySegment = segment"
+          >
+            {{ segment }}
+          </button>
+        </div>
+      </section>
+
       <div v-if="!workspaceDataReady" class="empty">
         No GSC workspace data is loaded yet. Click Load Data, or keep a saved snapshot available so the dashboard can restore it automatically.
       </div>
@@ -574,23 +691,27 @@ watch(themeMode, mode => {
               <DataTable :rows="pageTypeSummary" :columns="['Type', 'Pages', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
 
+            <Panel title="Query Segment Summary" :icon="Search" :meta="`${querySegmentSummary.length} segments`">
+              <DataTable :rows="querySegmentSummary" :columns="['Segment', 'Queries', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            </Panel>
+
             <Panel title="Top Pages" :icon="Files" :meta="`${topPages.length} rows`">
               <DataTable :rows="topPages" :columns="['Page', 'Type', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
 
             <Panel title="Top Queries" :icon="Search" :meta="`${topQueries.length} rows`">
-              <DataTable :rows="topQueries" :columns="['Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+              <DataTable :rows="topQueries" :columns="['Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>
           </div>
         </section>
 
         <aside class="side-stack">
           <Panel title="Low CTR Opportunities" :icon="Gauge" :meta="`${lowCtrRows.length} rows`">
-            <DataTable :rows="lowCtrRows" :columns="['Page', 'Type', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            <DataTable :rows="lowCtrRows" :columns="['Page', 'Type', 'Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
 
           <Panel title="Keyword Opportunities" :icon="Sparkles" :meta="`${keywordRows.length} rows`">
-            <DataTable :rows="keywordRows" :columns="['Page', 'Type', 'Query', 'Clicks', 'Impressions', 'CTR', 'Position']" />
+            <DataTable :rows="keywordRows" :columns="['Page', 'Type', 'Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>
         </aside>
       </section>

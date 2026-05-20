@@ -332,6 +332,19 @@ input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,9
 .channel-filter span{display:grid;gap:3px;min-width:0}
 .channel-filter strong{font-size:14px}
 .channel-filter small{font-size:12px;color:var(--muted)}
+.query-filter{
+  display:grid;
+  grid-template-columns:minmax(260px,1fr) minmax(220px,320px) auto;
+  align-items:end;
+}
+.query-filter > div:first-child{align-items:flex-start}
+.brand-terms-field{
+  min-width:220px;
+}
+.brand-terms-field input{
+  min-height:34px;
+  font-size:12px;
+}
 .segmented-control{
   display:flex;
   align-items:center;
@@ -721,6 +734,7 @@ td.bad{color:var(--bad);font-weight:700}
   .toolbar{grid-template-columns:1fr}
   .metrics{grid-template-columns:1fr 1fr}
   .channel-filter{display:grid}
+  .query-filter{grid-template-columns:1fr}
   .segmented-control{justify-content:flex-start}
   .analysis-summary{grid-template-columns:1fr 1fr}
   .analysis-toolbar{display:grid}

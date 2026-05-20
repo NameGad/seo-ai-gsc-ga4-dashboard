@@ -30,6 +30,7 @@ npm start
 - UI 采用克制的 AI 产品风格渐变系统，覆盖品牌、导航、筛选器、指标卡片、图表容器和历史数据模块。
 - `GSC`：当前可用的 Search Console 数据工作台。
 - `GSC` 内置页面类型筛选：可按 `All / Collection / Product / Blog / Other` 查看 Performance Trend、KPI 卡片、Top Pages、Top Queries、低 CTR 机会和关键词机会。
+- `GSC` 内置 Query segment 筛选：可按 `All / Branded / Non-branded` 拆分关键词、低 CTR 机会和关键词机会；品牌词支持自动推断，也可以手动维护。
 - `Insights`：GSC 深度分析工作区，基于本地历史快照识别页面衰退、关键词波动、低 CTR 机会、关键词内耗、搜索意图和新增/流失关键词。
 - `GA4`：已预留 Google Analytics 入口，后续可接入 GA4 traffic、events、conversions 等接口。
 - `History`：每次成功点击 `Load` 后，当前 GSC 数据会保存到本机 `data/snapshots/`。

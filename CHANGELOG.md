@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.8 - 2026-05-20
+
+- Added a GSC query segment filter for `All / Branded / Non-branded` analysis.
+- Added editable brand terms with local persistence and automatic inference from the selected GSC property.
+- Added a Query Segment Summary table and segment labels across Top Queries, Low CTR Opportunities, and Keyword Opportunities.
+
 ## 1.3.7 - 2026-05-20
 
 - Expanded the dashboard visual system with restrained aurora gradients inspired by modern AI product interfaces.
