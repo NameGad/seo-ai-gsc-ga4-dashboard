@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.10 - 2026-05-20
+
+- Improved SEO data tables so long URLs, queries, reasons, and actions no longer stretch the dashboard layout.
+- Added compact truncation with full-value browser tooltips for long text cells.
+- Added an expandable table view for deeper URL and query review.
+
 ## 1.3.9 - 2026-05-20
 
 - Added a GSC SEO Action Board with page/query priority scores and recommended actions.
