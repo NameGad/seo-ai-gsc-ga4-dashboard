@@ -220,6 +220,169 @@ const querySegmentSummary = computed(() => {
     }));
 });
 
+const cannibalQueryStats = computed(() => {
+  const buckets = new Map();
+  segmentedPageQuery.value.forEach(row => {
+    if (!row.query || !row.page || row.impressions < 50) return;
+    const current = buckets.get(row.query) || {
+      query: row.query,
+      pages: new Map(),
+      clicks: 0,
+      impressions: 0
+    };
+    const page = current.pages.get(row.page) || {page: row.page, clicks: 0, impressions: 0};
+    page.clicks += row.clicks || 0;
+    page.impressions += row.impressions || 0;
+    current.pages.set(row.page, page);
+    current.clicks += row.clicks || 0;
+    current.impressions += row.impressions || 0;
+    buckets.set(row.query, current);
+  });
+
+  return buckets;
+});
+
+const cannibalizationRows = computed(() => [...cannibalQueryStats.value.values()]
+  .map(group => {
+    const pages = [...group.pages.values()].sort((a, b) => b.impressions - a.impressions);
+    const topPage = pages[0];
+    const secondPage = pages[1];
+    const share = topPage && group.impressions ? topPage.impressions / group.impressions : 0;
+    return {
+      query: group.query,
+      segment: isBrandedQuery(group.query) ? 'Branded' : 'Non-branded',
+      pages,
+      clicks: group.clicks,
+      impressions: group.impressions,
+      share,
+      topPage: topPage?.page || '-',
+      competingPages: pages.slice(1, 4).map(page => page.page).join(' | '),
+      action: share < 0.62 && secondPage ? 'Choose primary page + adjust internal links' : 'Consolidate secondary pages'
+    };
+  })
+  .filter(row => row.pages.length >= 2 && row.impressions >= 200)
+  .sort((a, b) => (b.impressions * (1 - b.share)) - (a.impressions * (1 - a.share)))
+  .slice(0, 50)
+  .map(row => ({
+    Query: row.query,
+    Segment: row.segment,
+    Pages: formatNumber(row.pages.length),
+    Clicks: formatNumber(row.clicks),
+    Impressions: formatNumber(row.impressions),
+    'Top Share': formatPct(row.share),
+    'Top Page': row.topPage,
+    'Competing Pages': row.competingPages,
+    Action: row.action
+  })));
+
+const seoOpportunityItems = computed(() => segmentedPageQuery.value
+  .filter(row => row.query && row.page && row.impressions >= 100 && row.position >= 3 && row.position <= 35)
+  .map(row => buildOpportunityItem(row))
+  .filter(row => row.score >= 20)
+  .sort((a, b) => b.score - a.score));
+
+const seoActionRows = computed(() => seoOpportunityItems.value
+  .slice(0, 60)
+  .map(formatActionRow));
+
+const quickWinRows = computed(() => seoOpportunityItems.value
+  .filter(row => row.position >= 4 && row.position <= 15 && row.impressions >= 200 && row.ctrGap > 0)
+  .slice(0, 50)
+  .map(row => ({
+    Score: row.score,
+    Priority: row.priority,
+    Page: row.page,
+    Type: row.pageType,
+    Query: row.query,
+    Segment: row.segment,
+    Impressions: formatNumber(row.impressions),
+    CTR: formatPct(row.ctr),
+    Expected: formatPct(row.expectedCtr),
+    Position: row.position.toFixed(2),
+    Action: row.action
+  })));
+
+const pageDecayRows = computed(() => (deepAnalysis.value?.pageDecay || [])
+  .filter(row => pageTypeFilter.value === 'All' || detectShopifyType(row.page) === pageTypeFilter.value)
+  .slice(0, 50)
+  .map(row => ({
+    Page: row.page,
+    Type: detectShopifyType(row.page),
+    Severity: Math.round(row.severity || 0),
+    'Clicks Lost': formatNumber(row.clicksLost),
+    'Impr. Lost': formatNumber(row.impressionsLost),
+    'Click Δ': formatSigned(row.clicksDelta),
+    'Position Δ': formatSigned(row.positionDelta, 2),
+    Action: row.positionDelta >= 2 ? 'Refresh content + check intent drift' : 'Review title, snippets, and internal links'
+  })));
+
+const contentRefreshRows = computed(() => {
+  const decayByPage = new Map((deepAnalysis.value?.pageDecay || []).map(row => [row.page, row]));
+  const buckets = new Map();
+
+  segmentedPageQuery.value.forEach(row => {
+    if (!row.page || row.impressions < 50) return;
+    const current = buckets.get(row.page) || {
+      page: row.page,
+      pageType: detectShopifyType(row.page),
+      clicks: 0,
+      impressions: 0,
+      weightedPosition: 0,
+      queries: 0,
+      lowCtrQueries: 0,
+      nonBrandQueries: 0,
+      bestQuery: '',
+      bestQueryImpressions: 0
+    };
+    current.clicks += row.clicks || 0;
+    current.impressions += row.impressions || 0;
+    current.weightedPosition += (row.position || 0) * (row.impressions || 0);
+    current.queries += 1;
+    if (!isBrandedQuery(row.query)) current.nonBrandQueries += 1;
+    if (row.position <= 20 && row.ctr < expectedCtrByPosition(row.position) * 0.55) current.lowCtrQueries += 1;
+    if (row.impressions > current.bestQueryImpressions) {
+      current.bestQuery = row.query;
+      current.bestQueryImpressions = row.impressions;
+    }
+    buckets.set(row.page, current);
+  });
+
+  return [...buckets.values()]
+    .map(row => {
+      const position = row.impressions ? row.weightedPosition / row.impressions : 0;
+      const decay = decayByPage.get(row.page);
+      const score = Math.round(Math.min(100,
+        Math.log10(row.impressions + 1) * 14
+        + Math.min(22, row.lowCtrQueries * 3)
+        + Math.min(18, row.nonBrandQueries * 1.5)
+        + (decay ? 18 : 0)
+        + (position >= 5 && position <= 25 ? 12 : 0)
+      ));
+      return {
+        ...row,
+        position,
+        decay,
+        score
+      };
+    })
+    .filter(row => row.impressions >= 500 && row.score >= 45)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50)
+    .map(row => ({
+      Score: row.score,
+      Page: row.page,
+      Type: row.pageType,
+      'Best Query': row.bestQuery,
+      Queries: formatNumber(row.queries),
+      'Low CTR Queries': formatNumber(row.lowCtrQueries),
+      Impressions: formatNumber(row.impressions),
+      CTR: formatPct(row.impressions ? row.clicks / row.impressions : 0),
+      Position: row.position.toFixed(2),
+      Decay: row.decay ? `${formatNumber(row.decay.clicksLost)} clicks lost` : '-',
+      Action: row.decay ? 'Refresh and re-promote this page' : 'Expand sections around winning queries'
+    }));
+});
+
 function setStatus(message, type = 'default') {
   status.message = message;
   status.type = type;
@@ -267,6 +430,84 @@ function filterByQuerySegment(rows) {
   return rows.filter(row => querySegment.value === 'Branded'
     ? isBrandedQuery(row.query)
     : !isBrandedQuery(row.query));
+}
+
+function expectedCtrByPosition(position) {
+  if (position <= 1) return 0.28;
+  if (position <= 2) return 0.15;
+  if (position <= 3) return 0.10;
+  if (position <= 4) return 0.075;
+  if (position <= 5) return 0.055;
+  if (position <= 7) return 0.038;
+  if (position <= 10) return 0.025;
+  if (position <= 15) return 0.016;
+  if (position <= 20) return 0.010;
+  return 0.006;
+}
+
+function buildOpportunityItem(row) {
+  const expectedCtr = expectedCtrByPosition(row.position || 99);
+  const ctrGap = Math.max(0, expectedCtr - (row.ctr || 0));
+  const ctrGapRatio = expectedCtr ? ctrGap / expectedCtr : 0;
+  const segment = isBrandedQuery(row.query) ? 'Branded' : 'Non-branded';
+  const pageType = detectShopifyType(row.page);
+  const cannibalized = (cannibalQueryStats.value.get(row.query)?.pages?.size || 0) >= 2;
+  const impressionScore = Math.min(32, Math.log10((row.impressions || 0) + 1) * 9);
+  const positionScore = row.position <= 3 ? 6 : row.position <= 10 ? 26 : row.position <= 20 ? 22 : 12;
+  const ctrScore = Math.min(26, ctrGapRatio * 26);
+  const nonBrandBoost = segment === 'Non-branded' ? 10 : 0;
+  const typeBoost = ['Collection', 'Product', 'Blog'].includes(pageType) ? 4 : 0;
+  const cannibalBoost = cannibalized ? 8 : 0;
+  const score = Math.round(Math.min(100, impressionScore + positionScore + ctrScore + nonBrandBoost + typeBoost + cannibalBoost));
+  const action = chooseSeoAction(row, {ctrGap, expectedCtr, segment, cannibalized});
+
+  return {
+    ...row,
+    score,
+    priority: score >= 72 ? 'High' : score >= 48 ? 'Medium' : 'Low',
+    expectedCtr,
+    ctrGap,
+    segment,
+    pageType,
+    cannibalized,
+    action,
+    reason: buildOpportunityReason(row, {ctrGap, expectedCtr, segment, cannibalized})
+  };
+}
+
+function chooseSeoAction(row, context) {
+  if (context.cannibalized) return 'Resolve cannibalization';
+  if (context.ctrGap > 0 && row.position <= 10) return 'Rewrite title/meta';
+  if (row.position >= 4 && row.position <= 12) return 'Improve content + internal links';
+  if (row.position > 12 && row.position <= 25) return 'Expand content depth';
+  return context.segment === 'Non-branded' ? 'Create supporting content' : 'Protect branded SERP';
+}
+
+function buildOpportunityReason(row, context) {
+  const parts = [
+    `${formatNumber(row.impressions)} impressions`,
+    `rank ${row.position.toFixed(1)}`,
+    `${context.segment}`
+  ];
+  if (context.ctrGap > 0) parts.push(`${formatPct(context.ctrGap)} CTR gap`);
+  if (context.cannibalized) parts.push('multi-page query');
+  return parts.join(' · ');
+}
+
+function formatActionRow(row) {
+  return {
+    Score: row.score,
+    Priority: row.priority,
+    Action: row.action,
+    Page: row.page,
+    Type: row.pageType,
+    Query: row.query,
+    Segment: row.segment,
+    Impressions: formatNumber(row.impressions),
+    CTR: formatPct(row.ctr),
+    Position: row.position.toFixed(2),
+    Reason: row.reason
+  };
 }
 
 async function selectPageType(type) {
@@ -524,6 +765,13 @@ function formatQueryRow(row) {
   };
 }
 
+function formatSigned(value, digits = 0) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  const number = Number(value);
+  const prefix = number > 0 ? '+' : '';
+  return `${prefix}${number.toFixed(digits)}`;
+}
+
 function aggregateQueries(rows) {
   const buckets = new Map();
   rows.forEach(row => {
@@ -678,6 +926,30 @@ watch(brandTerms, terms => {
           </Panel>
 
           <div class="tables">
+            <Panel title="SEO Action Board" :icon="Sparkles" :meta="`${seoActionRows.length} prioritized actions`">
+              <DataTable
+                :rows="seoActionRows"
+                :columns="['Score', 'Priority', 'Action', 'Page', 'Type', 'Query', 'Segment', 'Impressions', 'CTR', 'Position', 'Reason']"
+                :numeric-columns="['Score', 'Impressions', 'CTR', 'Position']"
+              />
+            </Panel>
+
+            <Panel title="Quick Wins" :icon="Gauge" :meta="`${quickWinRows.length} high-upside rows`">
+              <DataTable
+                :rows="quickWinRows"
+                :columns="['Score', 'Priority', 'Page', 'Type', 'Query', 'Segment', 'Impressions', 'CTR', 'Expected', 'Position', 'Action']"
+                :numeric-columns="['Score', 'Impressions', 'CTR', 'Expected', 'Position']"
+              />
+            </Panel>
+
+            <Panel title="Content Refresh Planner" :icon="Files" :meta="`${contentRefreshRows.length} pages`">
+              <DataTable
+                :rows="contentRefreshRows"
+                :columns="['Score', 'Page', 'Type', 'Best Query', 'Queries', 'Low CTR Queries', 'Impressions', 'CTR', 'Position', 'Decay', 'Action']"
+                :numeric-columns="['Score', 'Queries', 'Low CTR Queries', 'Impressions', 'CTR', 'Position']"
+              />
+            </Panel>
+
             <Panel
               v-if="pageTypeFilter !== 'All'"
               :title="`${pageTypeFilter} Daily Trend Rows`"
@@ -706,6 +978,22 @@ watch(brandTerms, terms => {
         </section>
 
         <aside class="side-stack">
+          <Panel title="Page Decay Monitor" :icon="TrendingUp" :meta="`${pageDecayRows.length} pages`">
+            <DataTable
+              :rows="pageDecayRows"
+              :columns="['Page', 'Type', 'Severity', 'Clicks Lost', 'Impr. Lost', 'Click Δ', 'Position Δ', 'Action']"
+              :numeric-columns="['Severity', 'Clicks Lost', 'Impr. Lost', 'Click Δ', 'Position Δ']"
+            />
+          </Panel>
+
+          <Panel title="Keyword Cannibalization" :icon="Funnel" :meta="`${cannibalizationRows.length} queries`">
+            <DataTable
+              :rows="cannibalizationRows"
+              :columns="['Query', 'Segment', 'Pages', 'Clicks', 'Impressions', 'Top Share', 'Top Page', 'Competing Pages', 'Action']"
+              :numeric-columns="['Pages', 'Clicks', 'Impressions', 'Top Share']"
+            />
+          </Panel>
+
           <Panel title="Low CTR Opportunities" :icon="Gauge" :meta="`${lowCtrRows.length} rows`">
             <DataTable :rows="lowCtrRows" :columns="['Page', 'Type', 'Query', 'Segment', 'Clicks', 'Impressions', 'CTR', 'Position']" />
           </Panel>

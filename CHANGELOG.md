@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.9 - 2026-05-20
+
+- Added a GSC SEO Action Board with page/query priority scores and recommended actions.
+- Added Quick Wins, Content Refresh Planner, Page Decay Monitor, and Keyword Cannibalization panels to the GSC workspace.
+- Added scoring logic that combines impressions, ranking range, CTR gap, branded/non-branded segment, page type, and cannibalization signals.
+
 ## 1.3.8 - 2026-05-20
 
 - Added a GSC query segment filter for `All / Branded / Non-branded` analysis.
