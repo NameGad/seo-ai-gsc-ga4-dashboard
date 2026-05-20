@@ -63,28 +63,16 @@ const metrics = computed(() => {
 const performanceTrendRows = computed(() => {
   if (pageTypeFilter.value === 'All') return trendRows.value;
 
-  const dailyRows = rawPageTypeTrend.value
+  return rawPageTypeTrend.value
     .filter(row => row.pageType === pageTypeFilter.value)
     .map(row => ({
       date: row.date,
       clicks: row.clicks,
       impressions: row.impressions,
       ctr: row.ctr,
-      position: row.position
+      position: row.position,
+      pagesCount: row.pagesCount
     }));
-
-  if (dailyRows.length) return dailyRows;
-  if (!filteredPages.value.length) return [];
-
-  const clicks = filteredPages.value.reduce((sum, row) => sum + (row.clicks || 0), 0);
-  const impressions = filteredPages.value.reduce((sum, row) => sum + (row.impressions || 0), 0);
-  return [{
-    date: `${controls.startDate || 'Start'} → ${controls.endDate || 'End'}`,
-    clicks,
-    impressions,
-    ctr: impressions ? clicks / impressions : 0,
-    position: weightedAveragePosition(filteredPages.value)
-  }];
 });
 
 const performanceTrendKey = computed(() => [
@@ -138,6 +126,16 @@ const pageTypeSummary = computed(() => {
       Position: row.Impressions ? (row.weightedPosition / row.Impressions).toFixed(2) : '-'
     }));
 });
+
+const pageTypeDailyRows = computed(() => performanceTrendRows.value.map(row => ({
+  Date: row.date,
+  Type: pageTypeFilter.value,
+  Clicks: formatNumber(row.clicks),
+  Impressions: formatNumber(row.impressions),
+  CTR: formatPct(row.ctr),
+  Position: row.position ? row.position.toFixed(2) : '-',
+  Pages: row.pagesCount ? formatNumber(row.pagesCount) : '-'
+})));
 
 const topPages = computed(() => filteredPages.value
   .slice()
@@ -262,7 +260,7 @@ async function loadData() {
 
     const [trend, pageTypeTrend, pages, queries, pageQuery, breakdowns] = await Promise.all([
       getTrend(params),
-      getPageTypeTrend(params).catch(err => ({
+      getPageTypeTrend({...params, maxPages: 20}).catch(err => ({
         rows: [],
         warning: err.message
       })),
@@ -431,9 +429,21 @@ onMounted(() => {
             :meta="`${performanceTrendRows.length} points`"
           >
             <TrendChart :key="performanceTrendKey" :rows="performanceTrendRows" />
+            <div v-if="pageTypeFilter !== 'All' && performanceTrendRows.length === 0" class="empty">
+              No daily {{ pageTypeFilter }} trend data yet. Click Load Data again to fetch date + page level GSC rows.
+            </div>
           </Panel>
 
           <div class="tables">
+            <Panel
+              v-if="pageTypeFilter !== 'All'"
+              :title="`${pageTypeFilter} Daily Trend Rows`"
+              :icon="Funnel"
+              :meta="`${pageTypeDailyRows.length} days`"
+            >
+              <DataTable :rows="pageTypeDailyRows" :columns="['Date', 'Type', 'Clicks', 'Impressions', 'CTR', 'Position', 'Pages']" />
+            </Panel>
+
             <Panel title="Page Type Summary" :icon="Funnel" :meta="`${pageTypeSummary.length} types`">
               <DataTable :rows="pageTypeSummary" :columns="['Type', 'Pages', 'Clicks', 'Impressions', 'CTR', 'Position']" />
             </Panel>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3 - 2026-05-20
+
+- Fixed page type trend logic so Collection/Product/Blog/Other charts use daily `date + page` data instead of page totals.
+- Added a daily trend rows table below filtered Performance Trend charts.
+- Added paginated GSC fetching for page type daily trend data.
+
 ## 1.3.2 - 2026-05-20
 
 - Fixed Chart.js refresh behavior so the Performance Trend chart is remounted when the page type filter changes.

@@ -270,6 +270,33 @@ async function querySearchAnalytics(authClient, siteUrl, requestBody) {
   return res.data;
 }
 
+async function querySearchAnalyticsAll(authClient, siteUrl, requestBody, {maxPages = 20} = {}) {
+  const rowLimit = Math.max(1, Math.min(parseInt(requestBody.rowLimit || '25000', 10), 25000));
+  const allRows = [];
+  let startRow = parseInt(requestBody.startRow || '0', 10);
+  let pagesFetched = 0;
+
+  while (pagesFetched < maxPages) {
+    const data = await querySearchAnalytics(authClient, siteUrl, {
+      ...requestBody,
+      rowLimit,
+      startRow
+    });
+    const rows = data.rows || [];
+    allRows.push(...rows);
+    pagesFetched += 1;
+    if (rows.length < rowLimit) break;
+    startRow += rowLimit;
+  }
+
+  return {
+    rows: allRows,
+    pagesFetched,
+    rowLimit,
+    truncated: pagesFetched >= maxPages && allRows.length >= rowLimit * maxPages
+  };
+}
+
 async function listSites(authClient) {
   const webmasters = google.webmasters({version: 'v3', auth: authClient});
   const res = await webmasters.sites.list();
@@ -462,11 +489,17 @@ app.get('/api/gsc/page-type-trend', async (req, res) => {
     if (!siteUrl) return res.status(400).json({error: 'Missing siteUrl query parameter.'});
     const {startDate, endDate} = defaultDatesFromQuery(req.query);
     const rowLimit = parseInt(req.query.rowLimit || '25000', 10);
-    const startRow = parseInt(req.query.startRow || '0', 10);
-    const requestBody = {startDate, endDate, dimensions: ['date', 'page'], rowLimit, startRow};
-    const data = await querySearchAnalytics(auth, siteUrl, requestBody);
+    const maxPages = parseInt(req.query.maxPages || '20', 10);
+    const requestBody = {startDate, endDate, dimensions: ['date', 'page'], rowLimit, startRow: 0};
+    const data = await querySearchAnalyticsAll(auth, siteUrl, requestBody, {maxPages});
     const rows = transformPageTypeTrendRows(data);
-    res.json({rows, totalRows: rows.length, rawRows: data.totalRows || (data.rows || []).length});
+    res.json({
+      rows,
+      totalRows: rows.length,
+      rawRows: data.rows.length,
+      pagesFetched: data.pagesFetched,
+      truncated: data.truncated
+    });
   } catch (err) {
     console.error('Page type trend error', err.message);
     res.status(500).json({error: err.message});
