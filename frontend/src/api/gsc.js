@@ -3,16 +3,10 @@ async function request(path, params = {}) {
   const url = qs.toString() ? `${path}?${qs.toString()}` : path;
   const res = await fetch(url);
   const text = await res.text();
-  let data = {};
-
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch (err) {
-    data = { error: text };
-  }
+  const data = parseResponseBody(text);
 
   if (!res.ok) {
-    const error = new Error(data.error || `请求失败：HTTP ${res.status}`);
+    const error = new Error(formatHttpError(data.error, res.status));
     error.status = res.status;
     throw error;
   }
@@ -27,21 +21,43 @@ async function post(path, body = {}) {
     body: JSON.stringify(body)
   });
   const text = await res.text();
-  let data = {};
-
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch (err) {
-    data = { error: text };
-  }
+  const data = parseResponseBody(text);
 
   if (!res.ok) {
-    const error = new Error(data.error || `请求失败：HTTP ${res.status}`);
+    const error = new Error(formatHttpError(data.error, res.status));
     error.status = res.status;
     throw error;
   }
 
   return data;
+}
+
+function parseResponseBody(text) {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (err) {
+    return {error: stripHtmlError(text)};
+  }
+}
+
+function stripHtmlError(text = '') {
+  const preMatch = text.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+  const raw = preMatch ? preMatch[1] : text;
+  const stripped = raw
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped || '服务器返回了非 JSON 响应。';
+}
+
+function formatHttpError(message, status) {
+  if (message && message.includes('Cannot GET /api/')) {
+    return `${message}. 当前 3000 端口可能还在运行旧版服务，请重启 npm start 后再试。`;
+  }
+  return message || `请求失败：HTTP ${status}`;
 }
 
 export function getOauthDebug() {

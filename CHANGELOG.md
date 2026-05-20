@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.5 - 2026-05-20
+
+- Improved API error handling so HTML 404 responses from stale local servers no longer appear raw in the UI.
+- Added a clearer restart hint when the frontend hits a missing `/api/*` endpoint.
+
 ## 1.3.4 - 2026-05-20
 
 - Fixed page type filters so saved local GSC snapshots hydrate the live workspace automatically.
