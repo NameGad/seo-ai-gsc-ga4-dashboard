@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.7 - 2026-05-20
+
+- Expanded the dashboard visual system with restrained aurora gradients inspired by modern AI product interfaces.
+- Added gradient surfaces for the header brand, toolbar, workspace navigation, filters, panels, metric cards, analysis cards, and data vault elements.
+- Refined light and dark theme tokens so the gradient style remains readable in both modes.
+
 ## 1.3.6 - 2026-05-20
 
 - Added a persistent Light/Dark mode switch in the dashboard header.
